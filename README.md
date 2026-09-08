@@ -97,7 +97,7 @@ Use this when the repository should carry its own package pin.
 2. Run one of:
 
 ```text
-/guide-init git:git@github.com:sillypoise/pi-guides@v0.5.1
+/guide-init git:git@github.com:sillypoise/pi-guides@v0.6.0
 ```
 
 or later, once published to npm:
@@ -280,7 +280,7 @@ Example global pi settings using a pinned git source:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.5.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
   ]
 }
 ```
@@ -307,7 +307,7 @@ Git example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.5.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
   ]
 }
 ```
@@ -384,7 +384,7 @@ Example:
 ```json
 {
   "packages": [
-    "git:git@github.com:sillypoise/pi-guides@v0.5.1"
+    "git:git@github.com:sillypoise/pi-guides@v0.6.0"
   ]
 }
 ```
@@ -518,7 +518,7 @@ Current v0.1 behavior:
 - if the package is already available globally, plain `/guide-init` skips `.pi/settings.json` automatically
 - otherwise, plain `/guide-init` writes `.pi/settings.json` using the package git tag by default
 - you can pass an explicit package source, for example:
-  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.5.1`
+  - `/guide-init git:git@github.com:sillypoise/pi-guides@v0.6.0`
   - `/guide-init npm:@sillypoise/pi-guides@0.3.0`
 - you can use `--dev` to write a configured local package path for testing unreleased changes
 - `--dev` resolves from `PI_GUIDES_DEV_SOURCE` or settings field `piGuidesDevSource`
@@ -632,11 +632,11 @@ adaptations for other languages/runtimes. It is maintained by the pi-guides main
 - MUST requirements are mandatory within scope. SHOULD rules are strong defaults whose material
   departures need concrete reasons. Report unmet requirements and verification gaps explicitly.
 - Expected invalid inputs and operating failures use error handling, not assertion crashes.
-- Draft updates extend SAF-02, SAF-04, SAF-11, and CIS-07: cancellation request versus completion,
+- v0.6.0 extends SAF-02, SAF-04, SAF-11, and CIS-07: cancellation request versus completion,
   resource lifetimes, draining versus crash recovery, and corresponding failure tests. They are
-  package adaptations, not upstream quotations; see the mapping notes for the draft contract delta.
+  package adaptations, not upstream quotations; see the mapping notes for the contract delta.
 
-**Unreleased contract change:** this is a semantic policy revision, including restored upstream
+**v0.6.0 contract change:** this is a semantic policy revision, including restored upstream
 recommendations and deliberate portability adaptations, not just editorial compression. Existing
 paths, variant IDs, and `version: 1` configuration remain unchanged. Mode defaults change separately
 as described below. Package pins identify the policy version; consumers should review affected
@@ -676,7 +676,7 @@ Profiles are intentionally simple in v0.1:
 - no hidden expansions
 - one mode for the profile, not per-guide variant defaults
 
-### Default mode (unreleased change)
+### Default mode (changed in v0.6.0)
 
 **Full** is now the default across all 18 profiles, the bootstrap template, and runtime fallbacks.
 The pi-guides maintainers own this default. This repo's `.pi/guides.json` selects full. This uses

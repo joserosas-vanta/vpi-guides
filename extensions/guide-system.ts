@@ -1440,7 +1440,7 @@ function buildGuideInitUsageLines(cwd: string): string[] {
         "modes:",
         "- /guide-init --no-settings",
         "- /guide-init --dev",
-        "- /guide-init git:git@github.com:sillypoise/pi-guides@v0.5.1",
+        "- /guide-init git:git@github.com:sillypoise/pi-guides@v0.6.0",
         "- /guide-init npm:@sillypoise/pi-guides@0.3.0",
         "notes:",
         "- use --no-settings when the package is already available globally",

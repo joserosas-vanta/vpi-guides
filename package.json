@@ -1,6 +1,6 @@
 {
   "name": "@sillypoise/pi-guides",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Pi-native guide activation system with a registry-driven extension, templates, and base TigerStyle guides.",
   "type": "module",
   "private": false,

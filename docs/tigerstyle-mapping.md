@@ -3,7 +3,7 @@
 ## Ownership, source, and contract
 
 - Owner: pi-guides maintainers.
-- Status: unreleased semantic revision of `tigerstyle`, not an editorial-only cleanup.
+- Status: v0.6.0 semantic revision of `tigerstyle`, not an editorial-only cleanup.
 - Input: the supplied TigerStyle document, from "The Essence Of Style" through "The Last Stage",
   used in the design review for this change. An exact upstream commit has not been established.
   The quoted anchors below identify the passages used; this is not a claim about current upstream.
@@ -41,21 +41,21 @@ references retain their subjects, not a guarantee that the old wording still app
 - Removed: blanket helper-branch and noun-only mandates, arbitrary shell/dependency line thresholds,
   manual-unrolling encouragement, inaccurate arithmetic, and universalized failure statistics.
 
-Maintainers release this as an explicitly documented policy revision without moving an existing
+Version v0.6.0 releases this as an explicitly documented policy revision without moving an existing
 release tag. Consumers pinned to an older package retain the old policy until they deliberately
 upgrade. Local-path consumers see the changed files when their loader next reads them. Review local
 exceptions and affected rule references before upgrading; do not perform unrelated code migrations
 merely because this guide changed. There are no deprecated config fields or new migration commands.
 
-## Draft cancellation and shutdown amendment
+## Cancellation and shutdown amendment
 
-Owner: pi-guides maintainers. Status: draft for review, within the unreleased policy
-revision. Source: the user-supplied article "Cancelation Terminology", dated August 31, 2026; no
+Owner: pi-guides maintainers. Status: included in the v0.6.0 policy revision.
+Source: the user-supplied article "Cancelation Terminology", dated August 31, 2026; no
 canonical URL or immutable source revision was supplied. Its TigerBeetle implementation examples
 have not been independently verified. These amendments are explicit package adaptations, not claims
 that upstream TigerStyle already states these cancellation requirements.
 
-The draft extends four existing rules, preserving all 69 IDs and full/compact normative parity:
+The amendment extends four existing rules, preserving all 69 IDs and full/compact normative parity:
 
 | Rule | Added contract |
 | --- | --- |
@@ -79,8 +79,9 @@ remains valid. Earlier guide versions do not explicitly impose these additional 
 
 Validation: parity and content tests exercise both variants, including deliberate mutations that
 confuse acceptance with completion, permit premature reuse, or remove the rollback exception. These
-are document checks, not evidence that any runtime survives cancellation or power loss. Maintainers
-review the manual cases below before claiming agent adherence or promoting this draft to release.
+are document checks, not evidence that any runtime survives cancellation or power loss. The manual
+agent-evaluation cases below remain unexecuted for v0.6.0; maintainers run them before claiming
+agent-adherence improvements. This release makes no such claim.
 
 ## Authoring and parity contract
 
@@ -100,7 +101,7 @@ section, allowing only separator whitespace at section ends to differ. It also r
 missing ID, so equality between two incomplete documents is not sufficient.
 
 Tradeoff: the initial parity revision increased compact from about 2,200 to about 4,100 words;
-full was about 6,500 words. The cancellation draft brings them to about 4,400 and 7,200 words,
+full was about 6,500 words. The cancellation amendment brings them to about 4,400 and 7,200 words,
 respectively. These are word counts, not token or latency measurements. No runtime state, network
 operations, or scheduling is added. Loading/injecting the larger text increases disk reads,
 transient memory, and prompt payload. This spends context on scope and safe defaults rather than
@@ -131,13 +132,13 @@ error model, in both variants.
 - **SAF-02 — Adapted.** "Put a limit on everything"; "Where a loop cannot terminate ... asserted."
   Adds justified input/budget bounds, explicit exhaustion and backpressure, bounded event batches,
   and shutdown-contract assertions instead of asserting that every retry eventually succeeds.
-  The cancellation draft separates draining from teardown and bounds cancellation checks/waits;
+  The amendment separates draining from teardown and bounds cancellation checks/waits;
   timeout is not evidence that resource access has ceased.
 - **SAF-03 — Adapted.** "Use explicitly-sized types like u32 ... avoid ... usize."
   Adds required-interface conversions and range/precision checks for languages without fixed widths.
 - **SAF-04 — Adapted.** "Assert all function arguments and return values, pre/postconditions and
   invariants." Preserves the source error distinction; construction/type guarantees can establish
-  an obligation without adding a redundant runtime assertion. The cancellation draft separates
+  an obligation without adding a redundant runtime assertion. The amendment separates
   crash-on-corruption from optional crash-only shutdown and requires promised crash durability
   independently of shutdown cleanup.
 - **SAF-05 — Clarified.** "Assertion density ... average a minimum of two assertions per function."
@@ -155,7 +156,7 @@ error model, in both variants.
   Separates impossible internal states from legitimate rejected input; both sides need coverage.
 - **SAF-11 — Adapted.** "Tests must test exhaustively ... valid ... invalid ... becomes invalid."
   Exhaustive testing is recommended for small finite domains; boundary coverage for larger
-  domains includes operating failures and unchanged-state obligations after rejection. The draft
+  domains includes operating failures and unchanged-state obligations after rejection. The amendment
   adds cancellation/completion races, timeout ownership, and interrupted recovery checks.
 - **SAF-12 — Adapted.** "No memory may be dynamically allocated ... after initialization."
   Retains that model for controlled native paths, permits teardown, and substitutes bounded owned
@@ -274,7 +275,7 @@ error model, in both variants.
   Uses the simplest sufficient contract without erasing expected errors in pursuit of void returns.
 - **CIS-07 — Adapted.** "Run to completion without suspending."
   Permits required async work with stable ownership or revalidation of staleable facts; even a
-  freshly checked external connection can fail on the subsequent operation. The cancellation draft
+  freshly checked external connection can fail on the subsequent operation. The amendment
   distinguishes synchronous control flow from asynchronous request/completion protocols, preserves
   resources through timeout or waiter cancellation, and separates cancellation from rollback.
 - **CIS-08 — Adapted.** "Buffer ... not fully utilized, with padding not zeroed correctly."

@@ -262,7 +262,7 @@ test("guide-init writes the default git package source when settings are request
             assert.equal(ctx.reloadCount, 1);
             const settings = JSON.parse(readFileSync(join(rootPath, ".pi", "settings.json"), "utf8"));
             assert.deepEqual(settings, {
-                packages: ["git:git@github.com:sillypoise/pi-guides@v0.5.1"],
+                packages: ["git:git@github.com:sillypoise/pi-guides@v0.6.0"],
             });
         });
     });
