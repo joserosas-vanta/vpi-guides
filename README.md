@@ -399,7 +399,7 @@ Minimal example:
 {
   "version": 1,
   "profile": "core",
-  "mode": "compact",
+  "mode": "full",
   "additions": [],
   "removals": [],
   "variants": {}
@@ -635,9 +635,10 @@ adaptations for other languages/runtimes. It is maintained by the pi-guides main
 
 **Unreleased contract change:** this is a semantic policy revision, including restored upstream
 recommendations and deliberate portability adaptations, not just editorial compression. Existing
-paths, variant IDs, profile defaults, and `version: 1` configuration remain unchanged. Package pins
-identify the policy version; consumers should review affected rule references and local exceptions
-before upgrading. Existing release tags must not be moved to apply this revision silently.
+paths, variant IDs, and `version: 1` configuration remain unchanged. Mode defaults change separately
+as described below. Package pins identify the policy version; consumers should review affected
+rule references and local exceptions before upgrading. Existing release tags must not be moved
+to apply this revision silently.
 
 See [the mapping notes](docs/tigerstyle-mapping.md) for source mappings, adaptation rationale,
 provenance limits, cutover details, and manual agent-evaluation cases. The exact upstream commit for
@@ -663,11 +664,45 @@ This currently expands to:
 - `tigerstyle`
 - `simplicity-core`
 
+`coreplus` includes those two guides plus `security-core`, `contract-core`, and `epistemics`.
+
 Profiles are intentionally simple in v0.1:
 
 - no inheritance
 - no dynamic composition rules
 - no hidden expansions
+- one mode for the profile, not per-guide variant defaults
+
+### Default mode (unreleased change)
+
+**Full** is now the default across all 18 profiles, the bootstrap template, and runtime fallbacks.
+The pi-guides maintainers own this default. This repo's `.pi/guides.json` selects full. This uses
+the existing mode field; there is no new schema or profile-level variant mechanism.
+
+Resolution keeps the existing precedence:
+
+1. A next-turn overlay's explicit mode wins over a session overlay's mode.
+2. An overlay mode wins over the repo baseline mode.
+3. Within the baseline, repo `mode` wins over profile `mode`; if both are absent, full is used.
+4. Direct guide lists without a mode also use full.
+5. Existing repo `variants.<guide-id>` overrides still take precedence for individual guides.
+
+**Compatibility:** changing a semantic default is a behavior change. Package-pinned consumers adopt
+it on upgrade; old runtime versions still default to compact when neither repo nor profile gives a
+mode. No existing consumer config is rewritten. `/guide-init` uses full for new files and preserves
+existing files. `/guide-profile` preserves an existing explicit mode and supplies the selected
+profile's mode, or full, only when the repo has no mode.
+
+To keep a compact baseline, set `"mode": "compact"` or run `/guide-mode compact`.
+Active overlays can still override it; all shipped overlays now specify full. Unknown mode command
+arguments remain errors without configuration writes. Hand-edited invalid repo modes are not yet
+rejected at runtime; the schema and validator reject them. That existing gap is unchanged.
+
+Full trades more prompt space for explanation and examples. With the current guide files, coreplus
+loads about 90.5 kB of guide text in full versus 42.5 kB in compact, excluding prompt headers.
+Those are file-byte counts, not token counts or latency measurements. Only TigerStyle currently has
+an enforced full/compact normative-parity contract; this default change does not assert parity for
+other guides or prove improved model adherence.
 
 ---
 

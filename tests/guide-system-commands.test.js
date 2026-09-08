@@ -9,10 +9,11 @@ import {
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import guideSystemExtension from "../extensions/guide-system.ts";
 
-function createPiHarness() {
+function createPiHarness(extensionFactory = guideSystemExtension) {
     const commands = new Map();
     const events = new Map();
     const customEntries = [];
@@ -28,8 +29,35 @@ function createPiHarness() {
         },
     };
 
-    guideSystemExtension(api);
+    extensionFactory(api);
     return { commands, events, customEntries };
+}
+
+// A private package copy exercises missing profile modes without mutating cached live registries.
+async function loadModeFallbackHarness(rootPath) {
+    const paths = [
+        "extensions/guide-system.ts",
+        "registry/guides.json",
+        "files/tigerstyle-strict-full.md",
+        "files/tigerstyle-strict-compact.md",
+    ];
+    for (const relativePath of paths) {
+        const targetPath = join(rootPath, relativePath);
+        mkdirSync(dirname(targetPath), { recursive: true });
+        writeFileSync(targetPath,
+            readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8"), "utf8");
+    }
+    writeFileSync(join(rootPath, "registry/profiles.json"), JSON.stringify({
+        version: 1,
+        profiles: { legacy: { title: "Mode-less profile", guides: ["tigerstyle"] } },
+    }), "utf8");
+    const { default: extensionFactory } = await import(
+        pathToFileURL(join(rootPath, "extensions/guide-system.ts")).href
+    );
+    assert.equal(typeof extensionFactory, "function");
+    const harness = createPiHarness(extensionFactory);
+    assert.ok(harness.commands.has("guide-profile"));
+    return harness;
 }
 
 function createCommandContext(cwd, options = {}) {
@@ -164,6 +192,7 @@ test("guide-init --no-settings bootstraps repo-local files without project setti
 
         assert.equal(ctx.reloadCount, 1);
         assert.equal(readFileSync(join(rootPath, ".pi", "guides.json"), "utf8").length > 0, true);
+        assert.equal(readGuidesConfig(rootPath).mode, "full");
         assert.equal(readFileSync(join(rootPath, "AGENTS.md"), "utf8").length > 0, true);
         assert.equal(existsSync(join(rootPath, ".pi", "settings.json")), false);
 
@@ -865,6 +894,153 @@ test("compact widget shows auto-commit when enabled", async () => {
 
         const widgetLines = ctx.widgets.at(-1)?.value;
         assert.deepEqual(widgetLines, ["guides: coreplus | compact | auto-commit | 5 guides"]);
+    });
+});
+
+// Goal: exhaust all shipped profiles, including overlays, and verify actual injected variants.
+test("all shipped profiles use full mode without per-guide profile defaults", async () => {
+    const registry = JSON.parse(readFileSync(
+        new URL("../registry/profiles.json", import.meta.url), "utf8",
+    ));
+    const profiles = Object.entries(registry.profiles);
+    assert.equal(profiles.length, 18);
+    for (const [profileId, profile] of profiles) {
+        assert.equal(profile.mode, "full", profileId);
+        assert.equal(Object.hasOwn(profile, "variants"), false, profileId);
+        await withTempRoot(async (rootPath) => {
+            const ctx = createCommandContext(rootPath);
+            if (profile.scope === "overlay") {
+                writeGuidesConfig(rootPath, { version: 1, guides: [] });
+                await guideSession.handler(profileId, ctx);
+            } else {
+                writeGuidesConfig(rootPath, { version: 1, profile: profileId });
+            }
+            const before = readGuidesConfig(rootPath);
+            const result = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+            assert.equal(typeof result?.systemPrompt, "string", profileId);
+            assert.match(result.systemPrompt, /Mode: full/);
+            const variants = Array.from(result.systemPrompt.matchAll(/^- variant: (.+)$/gm),
+                (match) => match[1]);
+            assert.equal(variants.length, profile.guides.length, profileId);
+            for (const variant of variants) assert.match(variant, /-full$/);
+            assert.deepEqual(readGuidesConfig(rootPath), before);
+        });
+    }
+});
+
+// Goal: verify implicit defaults, explicit opt-outs, empty input, and persisted command behavior.
+test("direct guide lists default to full, including an empty list", async () => {
+    for (const ids of [[], ["tigerstyle", "testing"]]) {
+        await withTempRoot(async (rootPath) => {
+            writeGuidesConfig(rootPath, { version: 1, guides: ids });
+            const ctx = createCommandContext(rootPath);
+            const result = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+            assert.equal(typeof result?.systemPrompt, "string");
+            assert.match(result.systemPrompt, /Mode: full/);
+            const variants = Array.from(result.systemPrompt.matchAll(/^- variant: (.+)$/gm),
+                (match) => match[1]);
+            assert.equal(variants.length, ids.length);
+            for (const variant of variants) assert.match(variant, /-full$/);
+            assert.equal(readGuidesConfig(rootPath).mode, undefined);
+        });
+    }
+});
+
+test("explicit compact works for baseline profiles and direct lists", async () => {
+    for (const selection of [{ profile: "core" }, { guides: ["tigerstyle", "testing"] }]) {
+        await withTempRoot(async (rootPath) => {
+            const config = { version: 1, ...selection, mode: "compact" };
+            writeGuidesConfig(rootPath, config);
+            const ctx = createCommandContext(rootPath);
+            const result = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+            assert.equal(typeof result?.systemPrompt, "string");
+            assert.match(result.systemPrompt, /Mode: compact/);
+            assert.doesNotMatch(result.systemPrompt, /^- variant: .+-full$/m);
+            assert.match(result.systemPrompt, /^- variant: strict-compact$/m);
+            assert.deepEqual(readGuidesConfig(rootPath), config);
+        });
+    }
+});
+
+test("repo variant overrides still win over the full default", async () => {
+    await withTempRoot(async (rootPath) => {
+        writeGuidesConfig(rootPath, {
+            version: 1, profile: "core", variants: { tigerstyle: "strict-compact" },
+        });
+        const ctx = createCommandContext(rootPath);
+        const result = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+        assert.equal(typeof result?.systemPrompt, "string");
+        assert.match(result.systemPrompt, /Mode: full/);
+        assert.match(result.systemPrompt, /- tigerstyle \(strict-compact\)/);
+        assert.match(result.systemPrompt, /- simplicity-core \(strict-full\)/);
+    });
+});
+
+test("full overlay modes override compact baselines and clearing restores compact", async () => {
+    await withTempRoot(async (rootPath) => {
+        const config = { version: 1, profile: "core", mode: "compact" };
+        writeGuidesConfig(rootPath, config);
+        const ctx = createCommandContext(rootPath);
+        await guideSession.handler("review", ctx);
+        const overlay = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+        assert.match(overlay.systemPrompt, /Mode: full/);
+        assert.match(overlay.systemPrompt, /Write Policy: read-only/);
+        await guideSession.handler("clear", ctx);
+        const baseline = await beforeAgentStart({ systemPrompt: "Base prompt" }, ctx);
+        assert.match(baseline.systemPrompt, /Mode: compact/);
+        assert.deepEqual(readGuidesConfig(rootPath), config);
+    });
+});
+
+test("mode-less legacy profiles resolve and persist full; missing full files remain errors",
+    async () => {
+        await withTempRoot(async (rootPath) => {
+            const harness = await loadModeFallbackHarness(rootPath);
+            const beforeStart = harness.events.get("before_agent_start");
+            const start = harness.events.get("session_start");
+            const profileCommand = harness.commands.get("guide-profile");
+            writeGuidesConfig(rootPath, { version: 1, profile: "legacy" });
+            const ctx = createCommandContext(rootPath);
+            const result = await beforeStart({ systemPrompt: "Base prompt" }, ctx);
+            assert.match(result.systemPrompt, /Mode: full/);
+            assert.match(result.systemPrompt, /- tigerstyle \(strict-full\)/);
+            await profileCommand.handler("legacy", ctx);
+            assert.equal(ctx.reloadCount, 1);
+            assert.equal(readGuidesConfig(rootPath).mode, "full");
+
+            // Full's missing file is an operating error, not permission to silently choose compact.
+            const config = readGuidesConfig(rootPath);
+            rmSync(join(rootPath, "files/tigerstyle-strict-full.md"));
+            assert.ok(existsSync(join(rootPath, "files/tigerstyle-strict-compact.md")));
+            await start({}, ctx);
+            assert.equal(await beforeStart({ systemPrompt: "Base prompt" }, ctx), undefined);
+            assert.ok(ctx.notifications.some((entry) => entry.message.includes("does not exist")));
+            assert.deepEqual(readGuidesConfig(rootPath), config);
+        });
+    });
+
+test("invalid mode commands preserve config without reload or writes", async () => {
+    await withTempRoot(async (rootPath) => {
+        const config = { version: 1, profile: "core", mode: "full" };
+        writeGuidesConfig(rootPath, config);
+        const before = readFileSync(join(rootPath, ".pi/guides.json"), "utf8");
+        const ctx = createCommandContext(rootPath);
+        await guideMode.handler("unknown", ctx);
+        assert.equal(ctx.reloadCount, 0);
+        assert.ok(ctx.notifications.some((entry) => entry.message.includes("mode must be")));
+        assert.equal(readFileSync(join(rootPath, ".pi/guides.json"), "utf8"), before);
+    });
+});
+
+test("guide-init preserves an existing explicit compact config", async () => {
+    await withTempRoot(async (rootPath) => {
+        const config = { version: 1, profile: "core", mode: "compact" };
+        writeGuidesConfig(rootPath, config);
+        const before = readFileSync(join(rootPath, ".pi/guides.json"), "utf8");
+        const ctx = createCommandContext(rootPath);
+        await guideInit.handler("--no-settings", ctx);
+        assert.equal(readFileSync(join(rootPath, ".pi/guides.json"), "utf8"), before);
+        assert.equal(readGuidesConfig(rootPath).mode, "compact");
     });
 });
 

@@ -9,7 +9,7 @@
         "tigerstyle",
         "simplicity-core"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "coreplus": {
       "title": "CorePlus",
@@ -22,7 +22,7 @@
         "contract-core",
         "epistemics"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "frontend": {
       "title": "Frontend",
@@ -35,7 +35,7 @@
         "maintainability",
         "observability"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "backend": {
       "title": "Backend",
@@ -49,7 +49,7 @@
         "observability",
         "operability"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "docs": {
       "title": "Docs",
@@ -60,7 +60,7 @@
         "epistemics",
         "maintainability"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "security-sensitive": {
       "title": "Security-Sensitive",
@@ -74,7 +74,7 @@
         "reproducibility-core",
         "privacy"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "review": {
       "title": "Review",
@@ -87,7 +87,7 @@
         "epistemics",
         "maintainability"
       ],
-      "mode": "compact",
+      "mode": "full",
       "behavior": {
         "writePolicy": "read-only",
         "toolMode": "conservative",
@@ -104,7 +104,7 @@
         "incremental-refactoring-strategy",
         "compatibility-evolution"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "debug": {
       "title": "Debug",
@@ -116,7 +116,7 @@
         "robustness-core",
         "testing"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "design": {
       "title": "Design",
@@ -128,7 +128,7 @@
         "maintainability",
         "performance"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "docs-authoring": {
       "title": "Docs Authoring",
@@ -138,7 +138,7 @@
         "diataxis",
         "epistemics"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "release": {
       "title": "Release",
@@ -150,7 +150,7 @@
         "reproducibility-core",
         "testing"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "writing": {
       "title": "Writing",
@@ -163,7 +163,7 @@
         "diataxis",
         "maintainability"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "essay-writing": {
       "title": "Essay Writing",
@@ -174,7 +174,7 @@
         "argument-structure",
         "epistemics"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "creative-draft": {
       "title": "Creative Draft",
@@ -185,7 +185,7 @@
         "creative-constraints",
         "novelty-budgeting"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "left-turn": {
       "title": "Left Turn",
@@ -197,7 +197,7 @@
         "novelty-budgeting",
         "epistemics"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "anki-authoring": {
       "title": "Anki Authoring",
@@ -208,7 +208,7 @@
         "writing",
         "epistemics"
       ],
-      "mode": "compact"
+      "mode": "full"
     },
     "publish-check": {
       "title": "Publish Check",
@@ -222,7 +222,7 @@
         "reproducibility-core",
         "testing"
       ],
-      "mode": "compact"
+      "mode": "full"
     }
   }
 }

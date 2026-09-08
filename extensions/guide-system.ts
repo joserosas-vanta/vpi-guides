@@ -714,7 +714,7 @@ function resolveProfileSource(
     const additions = config.additions ?? [];
     const removals = config.removals ?? [];
     let ids = dedupe([...profile.guides, ...additions]).filter((id) => !removals.includes(id));
-    let mode = config.mode ?? profile.mode ?? "compact";
+    let mode = config.mode ?? profile.mode ?? GUIDE_MODE_FULL;
     let behavior = mergeBehaviorSettings(DEFAULT_BEHAVIOR, profile.behavior);
     behavior = mergeBehaviorSettings(behavior, config.behavior);
     let sessionProfileTitle: string | null = null;
@@ -757,7 +757,7 @@ function resolveDirectGuideSource(
 ): ResolvedSource {
     rejectDirectGuideModifiers(config);
     let ids = dedupe(config.guides ?? []);
-    let mode = config.mode ?? "compact";
+    let mode = config.mode ?? GUIDE_MODE_FULL;
     let behavior = { ...DEFAULT_BEHAVIOR };
     behavior = mergeBehaviorSettings(behavior, config.behavior);
     let sessionProfileTitle: string | null = null;
@@ -1711,7 +1711,7 @@ function buildProfileConfig(
     }
 
     if (nextConfig.mode === undefined) {
-        nextConfig.mode = profile.mode ?? "compact";
+        nextConfig.mode = profile.mode ?? GUIDE_MODE_FULL;
     }
     return nextConfig;
 }

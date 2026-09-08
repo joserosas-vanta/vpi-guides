@@ -98,6 +98,6 @@ If a rule should apply across multiple repositories, promote it into the guide p
 - Migration / rollout constraints:
   - start with base TigerStyle only; language-specific TigerStyle variants can be added later.
 - Performance constraints:
-  - default activation should prefer compact guide variants.
+  - default-mode changes must account for prompt size and preserve explicit compact selection.
 - Security / privacy constraints:
   - do not store secrets or credentials in guide configs, templates, or repo context files.

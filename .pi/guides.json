@@ -1,7 +1,7 @@
 {
   "version": 1,
   "profile": "coreplus",
-  "mode": "compact",
+  "mode": "full",
   "additions": [],
   "removals": [],
   "variants": {},
