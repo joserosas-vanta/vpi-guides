@@ -58,6 +58,12 @@ validated input limits, configuration, or resource budgets. Exhaustion MUST have
 or backpressure path, not silent truncation. An intentionally persistent event loop MAY outlive a
 work bound, but MUST bound each batch and queue and assert that exit follows its shutdown contract.
 
+Shutdown contracts MUST distinguish application-level graceful draining (stopping admission while
+allowing admitted work to finish) from operation cancellation and resource teardown.
+For cooperative cancellation, authors MUST bound work between cancellation checks.
+Supported drain/completion waits MUST have explicit waiting budgets and exhaustion behavior; a
+timeout MUST NOT imply that outstanding work has stopped (CIS-07).
+
 #### Commentary (non-normative)
 
 A finite container length is useful only if the accepted length itself is bounded. A made-up cap
@@ -66,6 +72,11 @@ can break a caller's contract just as easily as an unbounded operation can exhau
 For a retry budget, the important cases are success on the first attempt, success on the last
 allowed attempt, and exhaustion returning an operating error. Zero attempts needs defined behavior.
 An event loop can exit normally for requested shutdown; unexpected exit is a different condition.
+
+A service can stop accepting requests and drain existing work until a deadline, then follow its
+specified cancellation or termination policy. A deadline expiring does not make a borrowed buffer
+safe to reuse. Chunked CPU work can check cancellation between chunks rather than before every byte;
+the chunk budget limits responsiveness without requiring a check in every inner-loop iteration.
 
 ### SAF-03 — Make integer representation explicit
 
@@ -87,6 +98,12 @@ runtime programmer obligations not guaranteed by construction or the type system
 MUST be validated before use; expected rejection or operating failure MUST use explicit error
 handling, not assertions. Corrupt internal state MUST NOT be used after an assertion failure.
 
+Crash-on-corruption MUST NOT be conflated with crash-only lifecycle design or used to replace
+expected cancellation/error handling. For components with durability guarantees, abrupt termination
+and recovery MUST preserve those guarantees without relying on shutdown cleanup. Crash-only shutdown
+MAY replace graceful draining only when the application's durability, availability, and
+external-effect contracts permit it.
+
 #### Commentary (non-normative)
 
 Upstream distinguishes programmer errors from operating errors. The allowance for guarantees by
@@ -95,6 +112,13 @@ construction or types is a package adaptation to prevent meaningless assertions.
 An API transfer request can legitimately exceed a balance and receive an error. After successful
 validation and while holding the necessary ownership, an internal debit operation can assert its
 established preconditions. Concurrent changes can invalidate that assumption; see CIS-07.
+
+Stopping corrupt execution protects correctness; crash-only design instead chooses abrupt process
+termination as the ordinary shutdown path. Neither implies that every application benefits from
+skipping graceful draining. A crash-safe service can still drain to reduce interrupted requests.
+Durability concerns the promised persistence boundary, not necessarily unacknowledged work.
+Cleanup handlers cannot be relied on after process kill or power loss, and attempting to drain using
+known-corrupt state would contradict the assertion failure contract.
 
 ### SAF-05 — Maintain meaningful assertion density
 
@@ -177,11 +201,23 @@ limits. Authors MUST check failure-state invariants as well as returned errors. 
 SHOULD be tested exhaustively; larger domains MUST have explicit boundary and representative-case
 coverage without claiming exhaustive proof.
 
+For cancellation or shutdown code, tests MUST cover requests before work starts, during work, and
+after completion; repeated requests; cancellation failure or timeout; and late completion, wherever
+those states are supported. Checks MUST verify resource ownership and access safety after rejection
+or timeout, not only the reported status. Components promising crash recovery MUST test interrupted
+persistence and recovery against their durability guarantees.
+
 #### Commentary (non-normative)
 
 The bounded-domain interpretation is a package adaptation of upstream's exhaustive-testing language.
 For a capacity N, useful cases include empty, N-1, N, and N+1 where defined, plus repeated attempts
 after rejection. A rejected operation leaving partially updated state is still a failure.
+
+A controlled worker test can pause after borrowing a buffer, request cancellation, and verify that
+request acceptance and timeout do not release the buffer. Releasing the worker then exercises late
+completion and final cleanup. Recovery checks can interrupt persistence around the durability
+boundary and compare recovered state with the guarantees for acknowledged and unacknowledged work.
+Neither text-parity tests for this guide nor clean-shutdown tests exercise those runtime failures.
 
 ### SAF-12 — Control allocation over the operating lifetime
 
@@ -739,11 +775,38 @@ ownership or synchronization and revalidate any others before dependent use. Ext
 MUST still handle failure; a prior check does not guarantee that a subsequent I/O operation
 succeeds.
 
+Cancellation APIs MUST distinguish synchronous cancellation (a control-flow operation that finishes
+the target work and required cleanup before returning control to the caller) from asynchronous
+cancellation (a protocol that requests stopping and exposes a separate completion signal). Authors
+MUST NOT treat request acceptance as completion. Resources still accessible to a worker, kernel
+operation, or callback MUST remain valid and unavailable for conflicting reuse until completion
+establishes that those accesses have ceased. An ownership transfer MAY move responsibility for that
+wait, but MUST NOT relax lifetime or access constraints. Failure, timeout, or cancellation of the
+waiter MUST preserve these obligations.
+
+Cancellation completion MUST NOT be assumed to imply rollback unless the operation's contract
+guarantees it; contracts MUST describe effects already performed and how unknown outcomes are
+surfaced. Authors SHOULD avoid propagating asynchronous cancellation through layers that can
+safely reset synchronously after dependent work completes.
+
 #### Commentary (non-normative)
 
 Revalidation is an explicit async-runtime adaptation of upstream's run-to-completion instruction.
 A connection can fail even between adjacent check and send calls. Immutable local facts, meanwhile,
 do not automatically become false simply because an unrelated await occurs.
+
+An error return or exception can synchronously unwind one scope without stopping a worker or kernel
+operation that still accesses its memory. Requesting cancellation is then a protocol step, not a
+lifetime boundary. A join or completion callback establishes that boundary only if its contract
+ensures all relevant accesses have ceased; accepting a cancellation request alone does not.
+Completion can be immediate or delayed; the distinction is the API guarantee, not elapsed time.
+This concerns users of the resource, not necessarily a remote server whose result is abandoned.
+That server may already have committed an effect even when the local operation finishes cancelled.
+
+Callback-based asynchronous operations can keep each callback synchronous and non-suspending. Once
+the resource-owning layer finishes cancellation, higher layers with no remaining dependent accesses
+can reset synchronously. This avoids making the whole stack asynchronous merely because its lowest
+layer has outstanding I/O.
 
 ### CIS-08 — Prevent stale-byte exposure and out-of-bounds reads
 

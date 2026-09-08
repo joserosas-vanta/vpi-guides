@@ -632,6 +632,9 @@ adaptations for other languages/runtimes. It is maintained by the pi-guides main
 - MUST requirements are mandatory within scope. SHOULD rules are strong defaults whose material
   departures need concrete reasons. Report unmet requirements and verification gaps explicitly.
 - Expected invalid inputs and operating failures use error handling, not assertion crashes.
+- Draft updates extend SAF-02, SAF-04, SAF-11, and CIS-07: cancellation request versus completion,
+  resource lifetimes, draining versus crash recovery, and corresponding failure tests. They are
+  package adaptations, not upstream quotations; see the mapping notes for the draft contract delta.
 
 **Unreleased contract change:** this is a semantic policy revision, including restored upstream
 recommendations and deliberate portability adaptations, not just editorial compression. Existing
@@ -699,7 +702,7 @@ arguments remain errors without configuration writes. Hand-edited invalid repo m
 rejected at runtime; the schema and validator reject them. That existing gap is unchanged.
 
 Full trades more prompt space for explanation and examples. With the current guide files, coreplus
-loads about 90.5 kB of guide text in full versus 42.5 kB in compact, excluding prompt headers.
+loads about 95.4 kB of guide text in full versus 44.9 kB in compact, excluding prompt headers.
 Those are file-byte counts, not token counts or latency measurements. Only TigerStyle currently has
 an enforced full/compact normative-parity contract; this default change does not assert parity for
 other guides or prove improved model adherence.

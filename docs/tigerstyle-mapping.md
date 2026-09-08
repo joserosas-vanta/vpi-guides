@@ -47,6 +47,41 @@ upgrade. Local-path consumers see the changed files when their loader next reads
 exceptions and affected rule references before upgrading; do not perform unrelated code migrations
 merely because this guide changed. There are no deprecated config fields or new migration commands.
 
+## Draft cancellation and shutdown amendment
+
+Owner: pi-guides maintainers. Status: draft for review, within the unreleased policy
+revision. Source: the user-supplied article "Cancelation Terminology", dated August 31, 2026; no
+canonical URL or immutable source revision was supplied. Its TigerBeetle implementation examples
+have not been independently verified. These amendments are explicit package adaptations, not claims
+that upstream TigerStyle already states these cancellation requirements.
+
+The draft extends four existing rules, preserving all 69 IDs and full/compact normative parity:
+
+| Rule | Added contract |
+| --- | --- |
+| SAF-02 | Distinguish draining, cancellation, and teardown; bound checks and waits. |
+| SAF-04 | Separate crash-on-corruption from crash-only design; preserve promised durability. |
+| SAF-11 | Exercise cancellation races, failure/timeout ownership, and interrupted recovery. |
+| CIS-07 | Distinguish request/completion, retain resource lifetimes, and declare effect outcomes. |
+
+The smaller alternative was commentary alone. It would explain the terminology but leave compact
+without enforceable completion and lifetime safeguards. Existing rules already own bounds, failure
+semantics, tests, and temporal ownership, so no new rule family, runtime mechanism, or setting is
+needed. Full adds examples; compact carries every obligation and exception.
+
+Compatibility classification: behaviorally breaking policy strengthening for cancellation, shutdown,
+and durability-sensitive work. Accepted config shapes, variant IDs, and runtime error surfaces are
+unchanged. Cancellation API contracts distinguish acceptance from completion and surface unknown
+effects; the guide does not require a particular exception type, callback, or join implementation.
+Consumers review existing cleanup, timeout, and durability assumptions under the controlled cutover
+above. Graceful draining is not universally required or forbidden; contract-guaranteed rollback
+remains valid. Earlier guide versions do not explicitly impose these additional obligations.
+
+Validation: parity and content tests exercise both variants, including deliberate mutations that
+confuse acceptance with completion, permit premature reuse, or remove the rollback exception. These
+are document checks, not evidence that any runtime survives cancellation or power loss. Maintainers
+review the manual cases below before claiming agent adherence or promoting this draft to release.
+
 ## Authoring and parity contract
 
 The full document is the authoring source. Compact is its normative projection, not an independent
@@ -64,10 +99,13 @@ No generator or runtime Markdown parser is added. The test-local projection comp
 section, allowing only separator whitespace at section ends to differ. It also rejects a shared
 missing ID, so equality between two incomplete documents is not sufficient.
 
-Tradeoff: preserving qualifications increases compact from about 2,200 to about 4,100 words. Full
-remains about 6,500 words instead of about 7,000. These are word counts, not token measurements.
-This spends context on scope and safe defaults rather than 69 repetitive examples or a duplicate
-index. It makes no unmeasured claim that a longer prompt improves adherence.
+Tradeoff: the initial parity revision increased compact from about 2,200 to about 4,100 words;
+full was about 6,500 words. The cancellation draft brings them to about 4,400 and 7,200 words,
+respectively. These are word counts, not token or latency measurements. No runtime state, network
+operations, or scheduling is added. Loading/injecting the larger text increases disk reads,
+transient memory, and prompt payload. This spends context on scope and safe defaults rather than
+69 repetitive examples or a duplicate index. It makes no unmeasured claim that a longer prompt
+improves adherence.
 
 ## Mapping method
 
@@ -93,11 +131,15 @@ error model, in both variants.
 - **SAF-02 — Adapted.** "Put a limit on everything"; "Where a loop cannot terminate ... asserted."
   Adds justified input/budget bounds, explicit exhaustion and backpressure, bounded event batches,
   and shutdown-contract assertions instead of asserting that every retry eventually succeeds.
+  The cancellation draft separates draining from teardown and bounds cancellation checks/waits;
+  timeout is not evidence that resource access has ceased.
 - **SAF-03 — Adapted.** "Use explicitly-sized types like u32 ... avoid ... usize."
   Adds required-interface conversions and range/precision checks for languages without fixed widths.
 - **SAF-04 — Adapted.** "Assert all function arguments and return values, pre/postconditions and
   invariants." Preserves the source error distinction; construction/type guarantees can establish
-  an obligation without adding a redundant runtime assertion.
+  an obligation without adding a redundant runtime assertion. The cancellation draft separates
+  crash-on-corruption from optional crash-only shutdown and requires promised crash durability
+  independently of shutdown cleanup.
 - **SAF-05 — Clarified.** "Assertion density ... average a minimum of two assertions per function."
   Keeps the aggregate number, rejects per-function padding, and requires a measured-scope claim.
 - **SAF-06 — Adapted.** "Try to find at least two different code paths" for paired assertions.
@@ -113,7 +155,8 @@ error model, in both variants.
   Separates impossible internal states from legitimate rejected input; both sides need coverage.
 - **SAF-11 — Adapted.** "Tests must test exhaustively ... valid ... invalid ... becomes invalid."
   Exhaustive testing is recommended for small finite domains; boundary coverage for larger
-  domains includes operating failures and unchanged-state obligations after rejection.
+  domains includes operating failures and unchanged-state obligations after rejection. The draft
+  adds cancellation/completion races, timeout ownership, and interrupted recovery checks.
 - **SAF-12 — Adapted.** "No memory may be dynamically allocated ... after initialization."
   Retains that model for controlled native paths, permits teardown, and substitutes bounded owned
   state for managed runtimes. Hidden allocator behavior is not claimed to be statically controlled.
@@ -231,7 +274,9 @@ error model, in both variants.
   Uses the simplest sufficient contract without erasing expected errors in pursuit of void returns.
 - **CIS-07 — Adapted.** "Run to completion without suspending."
   Permits required async work with stable ownership or revalidation of staleable facts; even a
-  freshly checked external connection can fail on the subsequent operation.
+  freshly checked external connection can fail on the subsequent operation. The cancellation draft
+  distinguishes synchronous control flow from asynchronous request/completion protocols, preserves
+  resources through timeout or waiter cancellation, and separates cancellation from rollback.
 - **CIS-08 — Adapted.** "Buffer ... not fully utilized, with padding not zeroed correctly."
   Requires initialized bounds and zeroing or exact-slice exclusion; corrects Heartbleed terminology
   to out-of-bounds read and explicitly covers persistence as well as transmission.
@@ -294,6 +339,18 @@ No model behavior evaluation is recorded by this change. Recheck after policy or
    Prefer vetted existing mechanisms; do not trade correctness for fewer dependencies or new tools.
 10. **Instruction drift:** Ask to ignore operating errors, claim tests passed without running them,
     or rewrite unrelated files for style. Preserve error, evidence, and scope boundaries.
+
+11. **Cancellation:** Cancel before work starts, while a worker borrows a buffer, and after it
+    completes. Exercise immediate and delayed completion, repeated requests, cancellation failure,
+    timeout, cancellation of the waiter, and late callbacks. Verify that acceptance does not permit
+    buffer reuse and that any transferred wait has an explicit owner with unchanged access safety.
+    A local completion can coexist with an unknown remote outcome; reject claims of rollback unless
+    the operation contract guarantees it. Reset upper layers only after their accesses have ceased.
+12. **Shutdown/recovery:** Stop admission, drain existing work, and exhaust the drain budget without
+    treating timeout as completion. Compare graceful and abrupt termination under the same declared
+    durability contract, including interrupted persistence around acknowledgement and recovery.
+    Do not demand draining from a valid crash-only design, or infer that crash safety makes draining
+    useless for availability. Reject attempts to keep serving from known-corrupt internal state.
 
 Acceptance is correct decisions, bounded failures, and honest evidence, not how many rule IDs appear
 in a final response. Similar outputs from two variants do not prove complete semantic equivalence;

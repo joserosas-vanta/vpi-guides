@@ -52,6 +52,12 @@ validated input limits, configuration, or resource budgets. Exhaustion MUST have
 or backpressure path, not silent truncation. An intentionally persistent event loop MAY outlive a
 work bound, but MUST bound each batch and queue and assert that exit follows its shutdown contract.
 
+Shutdown contracts MUST distinguish application-level graceful draining (stopping admission while
+allowing admitted work to finish) from operation cancellation and resource teardown.
+For cooperative cancellation, authors MUST bound work between cancellation checks.
+Supported drain/completion waits MUST have explicit waiting budgets and exhaustion behavior; a
+timeout MUST NOT imply that outstanding work has stopped (CIS-07).
+
 ### SAF-03 — Make integer representation explicit
 
 Where the language provides fixed-width integers, authors MUST use them rather than
@@ -65,6 +71,12 @@ Every function MUST establish its preconditions, postconditions, and invariants.
 runtime programmer obligations not guaranteed by construction or the type system. Untrusted inputs
 MUST be validated before use; expected rejection or operating failure MUST use explicit error
 handling, not assertions. Corrupt internal state MUST NOT be used after an assertion failure.
+
+Crash-on-corruption MUST NOT be conflated with crash-only lifecycle design or used to replace
+expected cancellation/error handling. For components with durability guarantees, abrupt termination
+and recovery MUST preserve those guarantees without relying on shutdown cleanup. Crash-only shutdown
+MAY replace graceful draining only when the application's durability, availability, and
+external-effect contracts permit it.
 
 ### SAF-05 — Maintain meaningful assertion density
 
@@ -112,6 +124,12 @@ Tests MUST exercise valid inputs, invalid inputs, operating failures, and transi
 limits. Authors MUST check failure-state invariants as well as returned errors. Finite small domains
 SHOULD be tested exhaustively; larger domains MUST have explicit boundary and representative-case
 coverage without claiming exhaustive proof.
+
+For cancellation or shutdown code, tests MUST cover requests before work starts, during work, and
+after completion; repeated requests; cancellation failure or timeout; and late completion, wherever
+those states are supported. Checks MUST verify resource ownership and access safety after rejection
+or timeout, not only the reported status. Components promising crash recovery MUST test interrupted
+persistence and recovery against their durability guarantees.
 
 ### SAF-12 — Control allocation over the operating lifetime
 
@@ -422,6 +440,20 @@ If awaiting or yielding is required, authors MUST establish which facts remain s
 ownership or synchronization and revalidate any others before dependent use. External operations
 MUST still handle failure; a prior check does not guarantee that a subsequent I/O operation
 succeeds.
+
+Cancellation APIs MUST distinguish synchronous cancellation (a control-flow operation that finishes
+the target work and required cleanup before returning control to the caller) from asynchronous
+cancellation (a protocol that requests stopping and exposes a separate completion signal). Authors
+MUST NOT treat request acceptance as completion. Resources still accessible to a worker, kernel
+operation, or callback MUST remain valid and unavailable for conflicting reuse until completion
+establishes that those accesses have ceased. An ownership transfer MAY move responsibility for that
+wait, but MUST NOT relax lifetime or access constraints. Failure, timeout, or cancellation of the
+waiter MUST preserve these obligations.
+
+Cancellation completion MUST NOT be assumed to imply rollback unless the operation's contract
+guarantees it; contracts MUST describe effects already performed and how unknown outcomes are
+surfaced. Authors SHOULD avoid propagating asynchronous cancellation through layers that can
+safely reset synchronously after dependent work completes.
 
 ### CIS-08 — Prevent stale-byte exposure and out-of-bounds reads
 
