@@ -1,1411 +1,884 @@
 # TigerStyle Rulebook — Strict / Full
 
-## Preamble
+Agent-oriented port of TigerBeetle's TigerStyle, maintained by the pi-guides maintainers.
+This is a scoped package policy, not an upstream transcription. Language/runtime substitutions
+and agent-specific safeguards are explicit adaptations. The full and compact variants contain
+identical normative text; sections labeled Commentary are explanatory, not additional policy.
 
-### Purpose
+## Application Contract
 
-This document is a comprehensive, language-agnostic coding rulebook derived from TigerBeetle's
-TigerStyle. It is intended to be dropped into any codebase as part of an `AGENTS.md` file, a
-system prompt, or a code review checklist. Every rule is actionable and enforceable.
-
-### Design Goal Priority
-
-All rules serve three design goals, in this order:
-
-1. **Safety** — correctness, bounded behavior, crash on corruption.
-2. **Performance** — mechanical sympathy, batching, resource awareness.
-3. **Developer Experience** — clarity, naming, readability, maintainability.
-
-When goals conflict, higher-priority goals win.
-
-### Keyword Definitions (RFC 2119)
-
-- **MUST / SHALL** — Absolute requirement. Violations are defects.
-- **MUST NOT / SHALL NOT** — Absolute prohibition. Violations are defects.
-- **REQUIRED** — Equivalent to MUST.
-
-Non-compliance with any MUST/SHALL rule is a blocking review finding unless the rule is explicitly
-marked as not applicable to the project in a project-level override document.
-
-### How to Use This Document
-
-- Reference rules by ID (e.g., SAF-01, DX-05) in code reviews and commit messages.
-- All 69 rules are organized into 7 categories.
-- Each rule has: an imperative statement, a rationale, and a pseudocode example or template.
-- Rules are language-agnostic. Adapt examples to your language and tooling.
-
----
+- **Priority:** Safety > Performance > Developer Experience. Simplicity serves all three through
+  deliberate design and revision, not through shortcuts or merely fewer lines of code.
+- **Keywords:** MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY use BCP 14 meanings (RFC 2119 and
+  RFC 8174). MUST is mandatory within the stated scope. SHOULD establishes a strong default;
+  departure requires understanding and weighing a concrete competing constraint or consequence.
+  MAY grants permission, not a recommendation. Strict means adherence to these distinctions.
+- **Scope:** Authors MUST apply the rules to code they add or change and review relevant existing
+  boundaries. They MUST NOT expand a task into unrelated cleanup. Repository-wide metrics do not
+  authorize repository-wide edits or unsupported claims about uninspected code.
+- **Applicability:** Authors MUST use repository instructions, inspected code, and language/runtime
+  semantics to determine scope. Existing defects, personal preference, and vague claims of
+  idiomatic style are not exemptions. Language/framework requirements override style only where a
+  rule permits that adaptation; external signatures are not permission to break caller contracts.
+- **Conflicts:** Within the instruction hierarchy, authors MUST follow applicable requirements.
+  If a MUST cannot be met, authors MUST report the conflict before proceeding with the conflicting
+  change; reporting alone does not authorize departure. They MUST NOT invent an override.
+  A material departure from a SHOULD default MUST have a reason tied to the affected code.
+- **Error model:** Expected invalid input and operating failures MUST be validated and handled.
+  Assertions enforce internal programmer obligations; assertion failure MUST stop the affected
+  execution rather than continue with corrupt state. Assertions MUST NOT replace expected errors.
+- **Reasoning:** Before implementation, authors MUST establish the relevant state model, invariants,
+  limits, and failure paths. Assertions and comments MUST express that understanding. Tests and
+  fuzzing are checks on the model, not proof that no bugs exist.
+- **No cosmetic compliance:** Authors MUST NOT invent arbitrary limits, redundant assertions,
+  meaningless wrappers, or comments that restate code solely to appear compliant.
+- **Known defects:** Authors MUST resolve known safety/correctness showstoppers in changed work
+  before presenting it as ready. Out-of-scope defects MUST be reported without unrelated rewrites.
+- **Verification:** Authors MUST check valid, invalid, error, and boundary behavior relevant to the
+  change, and distinguish executed checks from unverified expectations. Material departures and
+  verification gaps MUST be reported concisely with relevant rule IDs, not a ritual checklist.
 
 ## Safety & Correctness (SAF)
 
-### SAF-01 — Use simple, explicit control flow. Do not use recursion.
+### SAF-01 — Keep control flow explicit and non-recursive
 
-All control flow MUST be simple, explicit, and statically analyzable. Recursion MUST NOT be used.
-This ensures all executions that should be bounded are bounded.
+Authored control flow MUST be simple and explicit. Authors MUST NOT introduce direct or indirect
+recursion. Iterative alternatives MUST retain understandable state transitions and explicit bounds.
 
-Rationale: Predictable, bounded execution is the foundation of safety. Recursion makes it difficult
-to prove termination and risks stack overflow.
+#### Commentary (non-normative)
 
-```text
-# Do: explicit loop with fixed bound
-for i in 0..max_iterations:
-    process(item[i])
+The upstream prohibition makes execution easier to bound and inspect. Replacing recursion with an
+unbounded stack merely moves the problem; a bounded worklist makes both storage and work visible.
+A minimum of domain-appropriate abstractions helps without hiding the execution model.
 
-# Do not: recursive call
-def process(items):
-    if items.empty(): return
-    process(items.rest())  # VIOLATION
-```
+### SAF-02 — Bound work and define exhaustion
 
-### SAF-02 — Put a limit on everything.
+Loops, queues, retries, buffers, and accumulated work MUST have explicit upper bounds derived from
+validated input limits, configuration, or resource budgets. Exhaustion MUST have a defined failure
+or backpressure path, not silent truncation. An intentionally persistent event loop MAY outlive a
+work bound, but MUST bound each batch and queue and assert that exit follows its shutdown contract.
 
-All loops, queues, retries, buffers, and any form of repeated or accumulated work MUST have a fixed
-upper bound. Where a loop cannot terminate (e.g., an event loop), this MUST be asserted.
+#### Commentary (non-normative)
 
-Rationale: Unbounded work causes infinite loops, tail-latency spikes, and resource exhaustion.
-The fail-fast principle demands that violations are detected sooner rather than later.
+A finite container length is useful only if the accepted length itself is bounded. A made-up cap
+can break a caller's contract just as easily as an unbounded operation can exhaust resources.
 
-```text
-# Do: bounded loop
-for i in 0..MAX_RETRIES:
-    if try_connect(): break
-assert(i < MAX_RETRIES, "connection retries exhausted")
+For a retry budget, the important cases are success on the first attempt, success on the last
+allowed attempt, and exhaustion returning an operating error. Zero attempts needs defined behavior.
+An event loop can exit normally for requested shutdown; unexpected exit is a different condition.
 
-# Do: assert non-terminating loop
-while true:  # event loop
-    assert(is_running, "event loop must be explicitly stopped")
-    process_events()
-```
+### SAF-03 — Make integer representation explicit
 
-### SAF-03 — Use explicitly-sized types.
+Where the language provides fixed-width integers, authors MUST use them rather than
+architecture-dependent types, except at interfaces requiring the latter. Such conversions MUST
+check representable ranges. In languages without fixed-width integers, authors MUST validate the
+required range and integer precision at input, arithmetic, and serialization boundaries.
 
-All integer types MUST be explicitly sized (e.g., u32, i64). Architecture-dependent types (e.g.,
-usize, size_t, long) MUST NOT be used unless required by a foreign interface.
+#### Commentary (non-normative)
 
-Rationale: Implicit sizing creates architecture-specific behavior and makes overflow analysis
-impossible without knowing the target.
+The interface exception and range-based fallback are package adaptations. For example, a JavaScript
+number can lose integer precision even though it has not reached floating-point overflow. Calling it
+a u64 in a comment does not change its representation or validate its range.
 
-```text
-# Do
-count: u32 = 0
-offset: u64 = 0
+### SAF-04 — Assert programmer obligations, handle operating errors
 
-# Do not
-count: usize = 0   # VIOLATION: architecture-dependent
-```
+Every function MUST establish its preconditions, postconditions, and invariants. Authors MUST assert
+runtime programmer obligations not guaranteed by construction or the type system. Untrusted inputs
+MUST be validated before use; expected rejection or operating failure MUST use explicit error
+handling, not assertions. Corrupt internal state MUST NOT be used after an assertion failure.
 
-### SAF-04 — Assert all preconditions, postconditions, and invariants.
+#### Commentary (non-normative)
 
-Every function MUST assert its preconditions (valid arguments), postconditions (valid return values),
-and any invariants that must hold during execution. A function MUST NOT operate blindly on unchecked
-data.
+Upstream distinguishes programmer errors from operating errors. The allowance for guarantees by
+construction or types is a package adaptation to prevent meaningless assertions.
 
-Rationale: Assertions detect programmer errors. Unlike operating errors which must be handled,
-assertion failures are unexpected. The only correct response to corrupt code is to crash. Assertions
-downgrade catastrophic correctness bugs into liveness bugs.
+An API transfer request can legitimately exceed a balance and receive an error. After successful
+validation and while holding the necessary ownership, an internal debit operation can assert its
+established preconditions. Concurrent changes can invalidate that assumption; see CIS-07.
 
-```text
-def transfer(from_account, to_account, amount):
-    assert(from_account != to_account)
-    assert(amount > 0)
-    assert(from_account.balance >= amount)
+### SAF-05 — Maintain meaningful assertion density
 
-    from_account.balance -= amount
-    to_account.balance += amount
+The codebase MUST average at least two meaningful assertions per function. This is an aggregate
+requirement, not a two-assertion quota for each function. Authors MUST NOT pad the count with
+redundant checks. A compliance claim MUST state the measured scope; an unmeasured codebase-wide
+average MUST be reported as unverified rather than inferred from the changed functions.
 
-    assert(from_account.balance >= 0)
-    assert(to_account.balance > 0)
-```
+#### Commentary (non-normative)
 
-### SAF-05 — Maintain assertion density of at least 2 per function.
+The numeric requirement comes from upstream. A short pure helper need not gain two artificial
+checks; functions with substantial runtime invariants can naturally have many. Tests with many
+assertions are not evidence that production invariants are adequately checked.
 
-The assertion density of the codebase MUST average a minimum of two assertions per function.
+### SAF-06 — Seek paired assertion paths
 
-Rationale: High assertion density is a force multiplier for discovering bugs through testing and
-fuzzing. Low assertion density leaves large regions of state space unchecked.
+For each enforced invariant, authors SHOULD seek at least two distinct code paths that check it,
+such as before writing and after reading. Pairing MUST check meaningful transitions rather than
+duplicate an assertion at one location or invent a second execution path. External corruption MUST
+still follow the boundary's error contract rather than automatically become an assertion crash.
 
-```text
-def process_batch(items, max_size):
-    assert(len(items) <= max_size)       # precondition
-    result = do_work(items)
-    assert(len(result) == len(items))    # postcondition
-    return result
-```
+#### Commentary (non-normative)
 
-### SAF-06 — Pair assertions across different code paths.
+Upstream says to try to find paired paths. A writer and a reader can independently validate a record
+format. How a reader reports corrupt storage depends on whether corruption is an expected operating
+failure or a violated internal assumption; pairing alone does not decide that policy.
 
-For every property to enforce, there MUST be at least two assertions on different code paths that
-verify the property. For example, assert validity before writing and after reading.
+### SAF-07 — Split independent assertions
 
-Rationale: Bugs hide at the boundary between valid and invalid data. A single assertion covers one
-side; paired assertions cover the transition.
+Independent asserted conditions MUST be written as separate assertions, rather than combined into
+one boolean conjunction. Splitting MUST preserve evaluation safety; dependent checks MUST occur
+only after the conditions making their evaluation valid have been established.
 
-```text
-# Assert before write
-assert(record.checksum == compute_checksum(record.data))
-write_to_disk(record)
+#### Commentary (non-normative)
 
-# Assert after read
-record = read_from_disk()
-assert(record.checksum == compute_checksum(record.data))
-```
+Separate checks identify which obligation failed. Checking that a pointer exists before reading its
+field is different from eagerly evaluating both conditions and risking an invalid access.
 
-### SAF-07 — Split compound assertions.
+### SAF-08 — Express implication assertions directly
 
-Compound assertions MUST be split into individual assertions. Prefer `assert(a); assert(b);` over
-`assert(a and b)`.
+An assertion of implication MUST use the direct form `if (a) assert(b)` where the language permits.
+Language or formatter requirements MAY expand that form across lines without changing its meaning.
+Authors MUST NOT replace the implication with an unconditional assertion of its consequent.
 
-Rationale: Split assertions are simpler to read and provide precise failure information. A compound
-assertion that fails gives no indication of which condition was violated.
+#### Commentary (non-normative)
 
-```text
-# Do
-assert(index >= 0)
-assert(index < length)
+A committed record implies the corresponding commit evidence; an uncommitted record does not.
+The syntax allowance ports the upstream single-line form to languages with different block syntax.
 
-# Do not
-assert(index >= 0 and index < length)  # VIOLATION: compound
-```
+### SAF-09 — Assert design relationships early
 
-### SAF-08 — Use single-line implication assertions.
+Relationships between compile-time constants, relevant type sizes, and configuration bounds MUST
+be asserted at compile time where supported, otherwise at startup before dependent work. Values
+only known at runtime MUST be checked before use. Authors MUST check relationships, not merely
+assert isolated constants without expressing the invariant.
 
-When a property B must hold whenever condition A is true, this MUST be expressed as a single-line
-implication: `if (a) assert(b)`.
+#### Commentary (non-normative)
 
-Rationale: Preserves logical intent without introducing complex boolean expressions or unnecessary
-nesting.
+Examples include a batch capacity fitting its buffer and an on-disk header matching its specified
+layout. Startup checks are a portability fallback, not a reason to delay an available compile-time
+check. Runtime configuration needs validation at its own boundary.
 
-```text
-if (is_committed) assert(has_quorum)
-if (is_leader) assert(term == current_term)
-```
+### SAF-10 — Check positive and negative space
 
-### SAF-09 — Assert compile-time constants and type sizes.
+For an invariant, authors MUST cover both the expected states and the excluded states at its
+boundary. Internal impossible states MUST be asserted; expected invalid inputs MUST be rejected
+through the error contract. A check on the happy path alone MUST NOT be presented as boundary
+coverage.
 
-Relationships between compile-time constants, type sizes, and configuration values MUST be asserted
-at compile time (or at program startup if the language lacks compile-time assertions).
+#### Commentary (non-normative)
 
-Rationale: Compile-time assertions verify design integrity before the program executes. They catch
-configuration drift and subtle invariant violations that runtime testing may miss.
+An insertion path can establish that a queue has capacity; its full-queue path can preserve existing
+entries while rejecting or deferring new work. These are complementary obligations, not duplicate
+assertions that the happy path was reached.
 
-```text
-static_assert(BLOCK_SIZE % PAGE_SIZE == 0)
-static_assert(sizeof(Header) == 64)
-static_assert(MAX_BATCH_SIZE <= BUFFER_CAPACITY)
-```
+### SAF-11 — Test validity transitions and errors
 
-### SAF-10 — Assert both positive and negative space.
+Tests MUST exercise valid inputs, invalid inputs, operating failures, and transitions at relevant
+limits. Authors MUST check failure-state invariants as well as returned errors. Finite small domains
+SHOULD be tested exhaustively; larger domains MUST have explicit boundary and representative-case
+coverage without claiming exhaustive proof.
 
-Assertions MUST cover both the positive space (what is expected) AND the negative space (what is not
-expected). Where data moves across the valid/invalid boundary, both sides MUST be asserted.
+#### Commentary (non-normative)
 
-Rationale: Most interesting bugs occur at the boundary between valid and invalid states. Asserting
-only the happy path leaves the error path unchecked.
+The bounded-domain interpretation is a package adaptation of upstream's exhaustive-testing language.
+For a capacity N, useful cases include empty, N-1, N, and N+1 where defined, plus repeated attempts
+after rejection. A rejected operation leaving partially updated state is still a failure.
 
-```text
-if index < length:
-    # Positive space: index is valid.
-    assert(buffer[index] != SENTINEL)
-else:
-    # Negative space: index is out of bounds.
-    assert(index == length, "index must not skip values")
-```
+### SAF-12 — Control allocation over the operating lifetime
 
-### SAF-11 — Test valid data, invalid data, and boundary transitions exhaustively.
+For project-controlled native allocation paths, memory MUST be allocated at initialization;
+allocation, freeing, and reallocation MUST NOT occur during normal operation. Teardown MAY release
+resources. In managed runtimes, authors MUST instead bound application-owned queues, caches,
+retained state, and large allocations, with explicit owners and release/eviction behavior. They
+MUST NOT claim control over hidden runtime allocations or introduce pools merely to mimic pointers.
 
-Tests MUST exercise valid inputs, invalid inputs, and the transitions between valid and invalid
-states. Tests MUST NOT only cover the happy path.
+#### Commentary (non-normative)
 
-Rationale: An analysis of production failures found that 92% of catastrophic failures resulted from
-incorrect handling of non-fatal errors. Testing only valid data misses the majority of real-world
-failure modes.
+Upstream's startup-only policy applies to TigerBeetle's controlled allocation model. The managed
+runtime alternative is a package adaptation, not an equivalent zero-allocation guarantee. A garbage
+collector does not bound a growing cache or release references that an application keeps reachable.
 
-```text
-# Test valid
-test_transfer(amount=100, balance=200)  # succeeds
+### SAF-13 — Minimize variable scope
 
-# Test invalid
-test_transfer(amount=0, balance=200)    # rejected: zero amount
-test_transfer(amount=300, balance=200)  # rejected: insufficient
+Variables MUST be declared in the smallest practical scope, with the minimum simultaneously live
+state needed for the operation. Authors MUST NOT hoist temporaries or retain obsolete variables
+merely for stylistic grouping.
 
-# Test boundary
-test_transfer(amount=200, balance=200)  # edge: exact balance
-test_transfer(amount=201, balance=200)  # edge: one over
-```
+#### Commentary (non-normative)
 
-### SAF-12 — Allocate memory statically at startup. No runtime reallocation.
+Tight scope reduces opportunities to select the wrong similarly named value. The relevant limit is
+semantic lifetime, not simply moving every declaration to the top of a smaller helper.
 
-All memory MUST be statically allocated at initialization. No memory SHALL be dynamically allocated
-or freed and reallocated after initialization.
+### SAF-14 — Keep functions within 70 lines
 
-Rationale: Dynamic allocation introduces unpredictable latency, fragmentation, and use-after-free
-risk. Static allocation forces upfront design of all memory usage patterns, which produces simpler,
-more performant, and more maintainable systems.
+Authored functions MUST NOT exceed 70 physical lines, counted from the first signature line through
+the final body line, including interior comments and blank lines. Decomposition MUST preserve
+coherent responsibilities; authors MUST NOT compress statements or extract meaningless wrappers
+to evade the limit.
 
-```text
-# Do: allocate once at startup
-buffer = allocate(MAX_BUFFER_SIZE)   # startup
-# ... use buffer for lifetime of program ...
+#### Commentary (non-normative)
 
-# Do not: allocate at runtime
-def process(data):
-    temp = allocate(len(data))       # VIOLATION: runtime allocation
-    free(temp)                       # VIOLATION: runtime deallocation
-```
+The hard limit comes from upstream; the counting convention is a package clarification. A boundary
+check compares a 70-line function with a 71-line function after formatting, not before wrapping a
+signature or adding explanatory comments.
 
-### SAF-13 — Declare variables at the smallest possible scope.
+### SAF-15 — Centralize orchestration when decomposing
 
-Variables MUST be declared at the smallest possible scope and the number of variables in any given
-scope MUST be minimized.
+When splitting an operation, authors SHOULD keep its orchestration decisions in the parent and
+extract coherent computations into helpers. Helpers MAY branch for their own local computation or
+validation; they SHOULD NOT hide the parent's workflow decisions. Splitting MUST preserve visible
+case coverage rather than distribute each branch into a separate opaque helper.
 
-Rationale: Fewer variables in scope reduces the probability that a variable is misused or confused
-with another. Tight scoping limits the blast radius of errors.
+#### Commentary (non-normative)
 
-```text
-# Do: declare at point of use
-for item in batch:
-    checksum = compute_checksum(item)
-    assert(checksum == item.expected_checksum)
+This ports upstream's decomposition advice instead of treating all helper branches as violations.
+A pure checksum helper can handle a final partial block without deciding whether the parent writes
+the record. Those are different levels of decision-making.
 
-# Do not: declare far from use
-checksum = 0                          # VIOLATION: premature declaration
-# ... 30 lines of unrelated code ...
-for item in batch:
-    checksum = compute_checksum(item)
-```
+### SAF-16 — Keep state ownership and effects visible
 
-### SAF-14 — Hard limit function length to 70 lines.
+When decomposing an operation, the parent SHOULD own its state changes, with computational helpers
+returning proposed values and computational leaves remaining pure. Necessary I/O helpers MAY have
+effects, but their names and contracts MUST expose those effects and ownership. Authors MUST NOT
+scatter mutation of the same state across helpers without a clear owner.
 
-No function SHALL exceed 70 lines. This is a hard limit, not a guideline.
+#### Commentary (non-normative)
 
-Rationale: There is a sharp cognitive discontinuity between a function that fits on screen and one
-that requires scrolling. The 70-line limit forces clean decomposition. Art is born of constraints —
-there are many ways to split a long function, but only a few will feel right.
+The explicit distinction between computation and I/O is a package adaptation. Reading a disk cannot
+be pure, but calculating the next balance can be. Passing an entire mutable object to a helper that
+only needs two numbers broadens its power unnecessarily.
 
-```text
-# If a function approaches 70 lines, split it:
-# - Keep control flow (if/switch) in the parent function.
-# - Move non-branching logic into helper functions.
-# - Keep leaf functions pure (no state mutation).
-```
-
-### SAF-15 — Centralize control flow in parent functions.
+### SAF-17 — Use strict diagnostics without hiding defects
 
-When splitting a large function, all branching logic (if/switch/match) MUST remain in the parent
-function. Helper functions MUST NOT contain control flow that determines program behavior.
-
-Rationale: Centralizing control flow means there is exactly one place to understand all branches.
-Scattered branching across helpers makes case analysis exponentially harder.
-
-```text
-# Do: parent owns all branching
-def process(request):
-    if request.type == READ:
-        data = read_helper(request.key)
-        return respond(data)
-    elif request.type == WRITE:
-        write_helper(request.key, request.value)
-        return acknowledge()
+For compilation, authors MUST use the compiler's strictest applicable diagnostic settings and
+resolve warnings in changed work. Existing project lint/type checks MUST also be run when relevant.
+A tool incompatibility or required suppression MUST be identified with a specific reason and scope;
+authors MUST NOT disable diagnostics merely to make a check pass.
 
-# Do not: helper decides behavior
-def read_helper(key, request):
-    if request.needs_auth:       # VIOLATION: control flow in helper
-        authenticate(request)
-```
-
-### SAF-16 — Centralize state mutation. Keep leaf functions pure.
-
-Parent functions MUST own state mutation. Helper functions MUST compute and return values without
-mutating shared state. Keep leaf functions pure.
+#### Commentary (non-normative)
 
-Rationale: Pure helper functions are easier to test, reason about, and compose. When only one
-function mutates state, bugs are localized to one site.
+Upstream asks for strict compiler warnings, not every mutually incompatible lint rule. The scoped
+lint obligation and documented-incompatibility path are package adaptations. A clean changed file
+is not evidence that an entire legacy codebase builds without warnings.
 
-```text
-# Do: helper computes, parent mutates
-def update_balance(account, amount):
-    new_balance = compute_new_balance(account.balance, amount)  # pure
-    assert(new_balance >= 0)
-    account.balance = new_balance  # mutation in parent
-
-# Do not: helper mutates directly
-def compute_new_balance(account, amount):
-    account.balance -= amount  # VIOLATION: mutation in leaf
-```
-
-### SAF-17 — Treat all compiler warnings as errors at the strictest setting.
+### SAF-18 — Retain control of event-driven work
 
-All compiler and linter warnings MUST be enabled at the strictest available setting. All warnings
-MUST be resolved, not suppressed.
+When the application owns scheduling, external events MUST enter bounded queues and be processed
+in bounded batches with explicit overload behavior. Framework-owned callbacks MAY handle bounded
+work inline when their API requires that model; authors MUST preserve its lifecycle and MUST NOT
+add an incompatible scheduler solely for stylistic compliance.
 
-Rationale: Warnings frequently indicate latent correctness issues. Suppressing them normalizes
-ignoring the tool that is best positioned to catch mechanical errors.
+#### Commentary (non-normative)
 
-```text
-# Compiler/linter flags (adapt to your language):
-# C/C++:   -Wall -Wextra -Werror -pedantic
-# Rust:    #![deny(warnings)]
-# Go:      go vet + staticcheck
-# TS/JS:   strict: true + no-any + no-unused
-```
+Batching is upstream's default for retaining control and amortizing costs. The callback allowance
+is an explicit portability adaptation, not permission for unlimited work in a callback. Input size,
+backpressure, cancellation, and response timing still define observable limits.
 
-### SAF-18 — Do not react directly to external events. Batch and process at your own pace.
+### SAF-19 — Make decision cases explicit
 
-Programs MUST NOT perform work directly in response to external events (network, user input,
-signals). Instead, events MUST be queued and processed in controlled batches at the program's own
-pace.
+Independent boolean decisions with different outcomes MUST be expressed as explicit branches.
+Complex else-if chains SHOULD be organized into a clear case tree. A compound predicate describing
+one local invariant MAY remain together when it hides no distinct outcome. Rewriting MUST preserve
+short-circuit safety, evaluation order, and handling of excluded cases.
 
-Rationale: Reacting directly to external events surrenders control flow to the environment, making
-it impossible to bound work per time period. Batching restores control, improves throughput, and
-enables assertion safety between batches.
+#### Commentary (non-normative)
 
-```text
-# Do: queue and batch
-event_queue.push(incoming_event)
-# ... in main loop tick ...
-batch = event_queue.drain(MAX_BATCH_SIZE)
-process_batch(batch)
+The local-predicate allowance is a package adaptation of upstream's broader splitting instruction.
+Invalid and unauthorized requests need distinct consideration even if both are eventually rejected.
+A concise predicate is not automatically evidence that both failure paths were considered.
 
-# Do not: react inline
-on_message(msg):
-    process(msg)    # VIOLATION: direct reaction, unbounded
-```
+### SAF-20 — Express invariants positively
 
-### SAF-19 — Split compound conditions into nested branches.
+Invariant descriptions and their primary checks SHOULD use positive domain language, such as
+`index < count` for a valid index. Error guards MAY use the complementary condition when that
+keeps the failure path explicit. Authors MUST avoid double negatives and inverted names that make
+the valid state ambiguous.
 
-Compound boolean conditions (evaluating multiple booleans in one expression) MUST be split into
-nested if/else branches. Complex `else if` chains MUST be rewritten as `else { if { } }` trees.
+#### Commentary (non-normative)
 
-Rationale: Compound conditions obscure case coverage. Nested branches make every case explicit and
-verifiable. They also force the author to consider whether both the positive and negative branches
-are handled.
+Upstream explains the readability advantage of positive invariants. The explicit error-guard
+allowance is a package adaptation; rejecting an out-of-range index early is not intrinsically a bug.
 
-```text
-# Do: nested branches
-if is_valid:
-    if is_authorized:
-        execute()
-    else:
-        reject("unauthorized")
-else:
-    reject("invalid")
+### SAF-21 — Handle every error explicitly
 
-# Do not: compound condition
-if is_valid and is_authorized:   # VIOLATION: compound
-    execute()
-```
+Every fallible operation MUST have explicit handling or propagation that preserves the caller's
+error contract and required cleanup. Errors MUST NOT be silently swallowed or converted to success.
+Recovery MUST preserve invariants; logging alone is not recovery, and diagnostics MUST NOT expose
+secrets or sensitive payloads.
 
-### SAF-20 — State invariants positively. Avoid negations.
+#### Commentary (non-normative)
 
-Conditions MUST be stated in positive form. Comparisons MUST follow the natural grain of the domain
-(e.g., `index < length` rather than `index >= length` with inverted logic).
+Upstream cites a study of distributed data-intensive systems in which 92% of the studied
+catastrophic failures involved incorrect handling of explicitly signaled non-fatal errors. That is a
+result about that study, not a universal failure rate. The diagnostic-data safeguard is a package
+addition. Study: <https://www.usenix.org/system/files/conference/osdi14/osdi14-paper-yuan.pdf>.
 
-Rationale: Negations are error-prone and harder to verify. Positive conditions align with how
-programmers naturally reason about loop bounds and index validity.
+### SAF-22 — Record why decisions were made
 
-```text
-# Do: positive form
-if index < length:
-    # invariant holds
-else:
-    # invariant violated
+Non-obvious decisions MUST have a rationale in a nearby comment or an associated commit message,
+including the constraint or tradeoff that motivated them. Authors MUST NOT invent measurements or
+historical explanations to justify a choice.
 
-# Do not: negated form
-if index >= length:              # VIOLATION: negation
-    # it's not true that the invariant holds
-```
+#### Commentary (non-normative)
 
-### SAF-21 — Handle all errors explicitly.
+Rationale gives reviewers criteria for deciding whether a choice still applies. An assumed workload
+and an observed incident are different kinds of evidence and can lead to different decisions.
 
-Every error MUST be handled explicitly. No error SHALL be silently ignored, swallowed, or discarded.
+### SAF-23 — Make consequential library options explicit
 
-Rationale: 92% of catastrophic production failures result from incorrect handling of non-fatal
-errors. Silent error swallowing is the single largest class of preventable production failures.
+At library calls, authors MUST explicitly set supported options affecting correctness, security,
+resource bounds, or required performance. Other defaults MAY be used when acceptable under the
+library's documented or pinned contract. Authors MUST NOT invent unsupported options or duplicate
+an entire default configuration without a concrete requirement.
 
-```text
-# Do: explicit handling
-result = call()
-if result.error:
-    log(result.error)
-    return result.error
+#### Commentary (non-normative)
 
-# Do not: swallowed error
-call()                           # VIOLATION: error ignored
-```
-
-### SAF-22 — Always state the "why" in comments and commit messages.
-
-Every non-obvious decision MUST be accompanied by a comment or commit message explaining why. Code
-without rationale is incomplete.
-
-Rationale: The "what" is in the code. The "why" is the only thing that enables safe future changes.
-Without rationale, maintainers cannot evaluate whether the original decision still applies.
-
-```text
-# Do
-# Why: batch to amortize syscall overhead; one-at-a-time caused 3x latency.
-process_batch(items)
-
-# Do not
-process_batch(items)             # no explanation of design choice
-```
-
-### SAF-23 — Pass explicit options to library calls. Do not rely on defaults.
-
-All options and configuration values MUST be passed explicitly at the call site. Default values
-MUST NOT be relied upon.
-
-Rationale: Defaults can change across library versions, causing latent, potentially catastrophic bugs
-that are invisible at the call site.
-
-```text
-# Do: explicit options
-http.request(url, {
-    timeout_ms: 5000,
-    retries: 3,
-    method: "GET"
-})
-
-# Do not: rely on defaults
-http.request(url)                # VIOLATION: implicit defaults
-```
-
----
+This is a scoped package adaptation of upstream's instruction to pass options explicitly. A timeout,
+retry policy, or durability option can define behavior the caller relies on. Copying unrelated
+settings can instead freeze accidental choices and increase maintenance surface.
 
 ## Performance & Design (PERF)
 
-### PERF-01 — Design for performance from the start.
+### PERF-01 — Consider performance during design
 
-Performance MUST be considered during the design phase, not deferred to profiling. The largest
-performance wins (1000x) come from architectural decisions that cannot be retrofitted.
+Before implementation, authors MUST consider how the proposed design affects resource use and
+latency at the expected scale. They MUST NOT defer architectural bottlenecks to later profiling.
+The depth of analysis MUST match the change; a claim of no material impact MUST have a concrete
+basis.
 
-Rationale: It is harder and less effective to fix a system after implementation. Mechanical sympathy
-during design is like a carpenter working with the grain.
+#### Commentary (non-normative)
 
-```text
-# During design, answer:
-# - What is the bottleneck resource? (network / disk / memory / CPU)
-# - What is the expected throughput?
-# - What is the latency budget per operation?
-# - Can work be batched?
-```
+Upstream emphasizes that large performance wins often come from architecture before measurement is
+possible. It does not establish that every design yields a 1000x improvement. Proportionate analysis
+is an explicit package adaptation for small tasks and heterogeneous repositories.
 
-### PERF-02 — Perform back-of-the-envelope resource sketches.
+### PERF-02 — Sketch resource budgets honestly
 
-Before implementation, back-of-the-envelope calculations MUST be performed for the four core
-resources (network, disk, memory, CPU) across their two characteristics (bandwidth, latency).
+For resource-affecting designs, authors MUST sketch bandwidth and latency for network, disk, memory,
+and CPU before implementation, marking irrelevant resources with a reason. Estimates MUST state
+units, workload assumptions, and limiting factors, and MUST NOT be presented as measurements.
+Arithmetic and capacity boundaries MUST be checked.
 
-Rationale: Sketches are cheap. They guide design into the right 90% of the solution space. Skipping
-them is the root of all performance evil.
+#### Commentary (non-normative)
 
-```text
-# Example sketch:
-# - 10,000 requests/sec
-# - Each request: 1 KB payload
-# - Network bandwidth: 10 KB/sec * 10,000 = 100 MB/sec (fits in 1 Gbps)
-# - Disk writes: 10,000 * 200 bytes = 2 MB/sec (fits in SSD bandwidth)
-# - Memory: 10,000 * 4 KB working set = 40 MB (fits in L3 cache? No. Plan accordingly.)
-```
+For an assumed 10,000 requests/s with 1,000 payload bytes each, payload bandwidth is
+10,000,000 bytes/s (10 MB/s, decimal), excluding protocol overhead. That calculation alone says
+nothing about tail latency, disk synchronization costs, or whether a deployment can sustain traffic.
 
-### PERF-03 — Optimize the slowest resource first, weighted by frequency.
+### PERF-03 — Optimize the weighted bottleneck
 
-Optimization effort MUST target the slowest resource first (network > disk > memory > CPU), after
-adjusting for frequency of access. A frequent cache miss can cost more than a rare disk sync.
+Optimization SHOULD target the slowest resource after accounting for access frequency and workload.
+Authors MUST justify the selected bottleneck with a sketch or measurement, rather than treating
+network, disk, memory, CPU as an unconditional ranking for every system.
 
-Rationale: Bottleneck-focused optimization yields the largest gains. Optimizing the wrong resource
-wastes effort.
+#### Commentary (non-normative)
 
-```text
-# Priority order (adjust by frequency):
-# 1. Network (ms latency, limited bandwidth)
-# 2. Disk (us-ms latency, sequential vs random)
-# 3. Memory (ns-us latency, cache hierarchy)
-# 4. CPU (ns latency, branch prediction)
-```
+Upstream's resource ordering is a starting model. Many cache misses can dominate a rare disk sync;
+a CPU-bound transformation can dominate an otherwise lightly used network path.
 
-### PERF-04 — Separate control plane from data plane.
+### PERF-04 — Separate coordination from bulk processing
 
-The control plane (scheduling, coordination, metadata) MUST be clearly separated from the data plane
-(bulk data processing). This separation enables batching on the data plane without sacrificing
-assertion safety on the control plane.
+In designs with bulk processing, authors SHOULD separate scheduling, validation, and metadata
+coordination from data-plane work so batching does not remove safety checks. They MUST NOT introduce
+new architectural layers when local separation already makes those responsibilities clear.
 
-Rationale: Mixing control and data operations prevents effective batching and forces a choice between
-safety and throughput. Separation eliminates this tradeoff.
+#### Commentary (non-normative)
 
-```text
-# Control plane: validate, schedule, assert
-batch = control_plane.prepare(requests)
-assert(batch.valid())
+Control/data separation can be visible within a module; it need not create services, frameworks, or
+additional queues. The scope and anti-layering safeguard are package adaptations.
 
-# Data plane: execute in bulk
-data_plane.execute(batch)
-```
+### PERF-05 — Batch within latency and failure contracts
 
-### PERF-05 — Amortize costs via batching.
+Repeated resource accesses SHOULD be batched to amortize overhead. Batches MUST have bounded size
+and waiting time, with defined partial-failure and ordering behavior. Authors MUST NOT batch across
+a required latency, durability, isolation, or cancellation boundary.
 
-Network, disk, memory, and CPU costs MUST be amortized by batching accesses. Per-item processing
-MUST be avoided when batching is feasible.
+#### Commentary (non-normative)
 
-Rationale: Per-item overhead (syscalls, context switches, cache misses) dominates at high
-throughput. Batching reduces overhead by orders of magnitude.
+A batch can reduce syscall overhead but delay an interactive response or change which writes are
+acknowledged together. The explicit contract boundaries adapt upstream's batching principle.
 
-```text
-# Do: batch
-items = collect(MAX_BATCH_SIZE)
-write_all(items)                 # one syscall
+### PERF-06 — Keep hot-path work predictable
 
-# Do not: per-item
-for item in items:
-    write(item)                  # VIOLATION: syscall per item
-```
+In performance-critical paths, authors SHOULD favor sequential access and coherent chunks of work
+over avoidable pointer chasing and erratic branching. A proposed locality improvement MUST preserve
+correctness and be tied to the actual data layout and workload.
 
-### PERF-06 — Keep CPU work predictable. Avoid erratic control flow.
+#### Commentary (non-normative)
 
-Hot paths MUST have predictable, linear control flow. Avoid branching, pointer chasing, and random
-access patterns in performance-critical code.
+Predictability helps cache use and CPU execution. This is not a blanket prohibition on linked
+structures or branches in cold code, nor a reason to remove validation from a hot path.
 
-Rationale: Modern CPUs are sprinters. Predictable work enables prefetching, branch prediction, and
-cache line utilization. Erratic control flow forces pipeline stalls.
+### PERF-07 — Do not depend on unverified optimization
 
-```text
-# Do: linear access
-for i in 0..count:
-    process(buffer[i])           # sequential, predictable
+Performance-sensitive designs SHOULD minimize reliance on compiler transformations for meeting
+requirements. When a requirement depends on inlining, vectorization, unrolling, or field caching,
+authors MUST verify that behavior for the target or report it as unverified. They MUST NOT manually
+unroll or otherwise complicate code solely on an unsupported assumption of improvement.
 
-# Do not: pointer chasing
-node = head
-while node:
-    process(node)
-    node = node.next             # random memory access
-```
+#### Commentary (non-normative)
 
-### PERF-07 — Be explicit. Do not depend on compiler optimizations.
+This preserves upstream's mechanical sympathy without banning compiler optimization.
+Readable explicit data flow can help both the compiler and reviewer; manual optimization still has
+a cost and can make generated code worse.
 
-Performance-critical code MUST be written explicitly. Do not rely on the compiler to inline, unroll,
-vectorize, or otherwise optimize the code.
+### PERF-08 — Expose hot-loop inputs
 
-Rationale: Compiler optimizations are heuristic and fragile. Explicit code is portable across
-compilers and versions, and is easier for humans to verify.
+When hot-loop field aliasing can obstruct optimization, authors SHOULD extract a standalone loop
+with primitive inputs rather than pass an entire self/this object. Inputs MUST preserve ownership,
+bounds, and lifetime guarantees. This rule MUST NOT cause mechanical extraction of cold methods
+or fake pointer interfaces in runtimes where the optimization premise does not apply.
 
-```text
-# Do: explicit unrolling if needed
-process(items[0])
-process(items[1])
-process(items[2])
-process(items[3])
+#### Commentary (non-normative)
 
-# Do not: hope the compiler unrolls
-for i in 0..4:
-    process(items[i])            # may or may not be unrolled
-```
-
-### PERF-08 — Use primitive arguments in hot loops. Avoid implicit self/this.
-
-Hot loop functions MUST take primitive arguments directly. They MUST NOT take `self`/`this` or large
-struct references that require the compiler to prove field caching.
-
-Rationale: Primitive arguments enable the compiler to keep values in registers without alias
-analysis. A human reader can also spot redundant computations more easily.
-
-```text
-# Do: primitive arguments
-def hot_loop(data_ptr, length, stride):
-    for i in 0..length:
-        process(data_ptr[i * stride])
-
-# Do not: self reference
-def hot_loop(self):
-    for i in 0..self.length:     # VIOLATION: compiler must prove self.length stable
-        process(self.data[i * self.stride])
-```
-
----
+Primitive bounds and strides make repeated field loads visible and reduce alias-analysis demands in
+relevant compilers. The applicability and extraction guardrails are package adaptations.
 
 ## Developer Experience & Naming (DX)
 
-### DX-01 — Choose precise nouns and verbs.
+### DX-01 — Name domain concepts precisely
 
-Names MUST capture what a thing is or does with precision. Take time to find the name that provides
-a crisp, intuitive mental model. Names MUST show understanding of the domain.
+Names MUST accurately convey what a value is or an operation does, using nouns and verbs that form
+a consistent domain model. Authors MUST NOT introduce vague abstractions or misleading names to
+hide responsibilities they have not understood.
 
-Rationale: Great names are the essence of great code. They reduce documentation burden and make the
-code self-describing. A wrong name actively misleads.
+#### Commentary (non-normative)
 
-```text
-# Do
-pipeline, transfer, checkpoint, replica
+A precise name can reduce explanatory burden. A word such as handler is not universally wrong; the
+problem is whether its surrounding context leaves the reader guessing what it handles and owns.
 
-# Do not
-data, info, manager, handler, process  # too vague
-```
+### DX-02 — Use descriptive, consistent word separation
 
-### DX-02 — Use snake_case for files, functions, and variables.
+Authored files, functions, and variables MUST use snake_case unless an established language or
+repository naming convention requires another form. In that case authors MUST follow that
+convention while preserving descriptive word separation. Naming changes MUST NOT break external
+contracts or trigger unrelated renames.
 
-All file names, function names, and variable names MUST use snake_case.
+#### Commentary (non-normative)
 
-Rationale: Underscores are the closest thing programmers have to spaces. They separate words clearly
-and encourage descriptive multi-word names. Consistency eliminates style debates.
+The language/repository exception is a package adaptation of Zig-oriented upstream naming. Existing
+TypeScript camelCase can be followed without abandoning descriptive names or renaming public APIs.
 
-```text
-# Do
-process_batch, user_account, latency_ms_max
+### DX-03 — Avoid ambiguous abbreviations
 
-# Do not
-processBatch, UserAccount, latencyMsMax  # camelCase/PascalCase for these
-```
+Authored names MUST NOT be abbreviated except established domain acronyms and primitive integer
+loop counters, sort arguments, or matrix coordinates. Script flags MUST use long forms where the
+command provides them. External names that cannot be changed MAY be retained at their interfaces.
 
-**Note:** If your language has a strong idiomatic convention (e.g., camelCase in JavaScript/TypeScript,
-PascalCase for types in Go), follow the language convention but apply the spirit of this rule:
-prefer clear word separation and descriptive names.
+#### Commentary (non-normative)
 
-### DX-03 — Do not abbreviate names (except trivial loop counters).
+Upstream explicitly allows sort/matrix shorthand and uses domain acronyms. General loop counters and
+fixed external names are package allowances. The long-flag requirement concerns scripts, not typing
+an interactive command. Domain meaning, not typing convenience, justifies an acronym.
 
-Variable and function names MUST NOT be abbreviated unless the variable is a primitive integer used
-as a loop counter, sort index, or matrix coordinate. Script flags MUST use long form (--force, not
--f).
+### DX-04 — Capitalize acronyms consistently
 
-Rationale: Abbreviations are ambiguous. `ctx` could mean context, contract, or counter. The cost of
-typing a few extra characters is negligible; the cost of misunderstanding is not.
+Acronyms in authored mixed-case names MUST use standard capitalization, such as HTTPClient rather
+than HttpClient, unless a fixed external interface requires otherwise. In snake_case names, authors
+MUST retain the convention's lowercase word form rather than mix capitalization styles.
 
-```text
-# Do
-connection, request, response, configuration
+#### Commentary (non-normative)
 
-# Do not
-conn, req, res, cfg              # VIOLATION: abbreviated
-```
+The mixed-case scope reconciles upstream acronym examples with snake_case identifiers. A required
+external spelling is an interface constraint, not a reason to spread inconsistent local names.
 
-### DX-04 — Capitalize acronyms consistently.
+### DX-05 — Put units and qualifiers after the subject
 
-Acronyms in names MUST use their standard capitalization (e.g., VSR, HTTP, SQL), not title case.
+Quantitative names MUST include relevant units or qualifiers after the subject, ordered by
+descending significance, such as latency_ms_max. Authors MUST keep related names consistent and
+distinguish counts, indexes, sizes, and durations rather than rely on an ambiguous numeric suffix.
 
-Rationale: Standard capitalization is unambiguous. Title-casing acronyms (Vsr, Http) obscures that
-they are acronyms and can cause confusion with regular words.
+#### Commentary (non-normative)
 
-```text
-# Do
-VSRState, HTTPClient, SQLQuery
+Subject-first names group related values in source and sorted lists. Clear units make conversion
+errors easier to notice: a count and a byte size can otherwise look interchangeable.
 
-# Do not
-VsrState, HttpClient, SqlQuery   # VIOLATION: title-cased acronyms
-```
+### DX-06 — Convey resource ownership through names
 
-### DX-05 — Append units and qualifiers at the end, sorted by significance.
+Resource names SHOULD communicate lifecycle, ownership, or allocation strategy when that distinction
+matters, such as arena or pool. A general name MAY remain when its type and local context make the
+lifecycle clear; names MUST NOT imply cleanup or ownership semantics that the resource lacks.
 
-Units and qualifiers MUST be appended to variable names, sorted from most significant to least
-significant (descending). The variable MUST start with the most meaningful word.
+#### Commentary (non-normative)
 
-Rationale: This convention causes related variables to align visually and group semantically. It
-also makes alphabetical sorting useful.
+Upstream calls allocator a good name and more specific lifecycle names excellent ones. This is a
+preference for useful information, not a demand to invent a resource strategy for a better name.
 
-```text
-# Do
-latency_ms_max
-latency_ms_min
-latency_ms_p99
-transfer_count_pending
-transfer_count_posted
+### DX-07 — Prefer symmetrical related names
 
-# Do not
-max_latency_ms                   # VIOLATION: qualifier first
-min_latency                      # VIOLATION: no unit
-```
+Related names SHOULD have matching character lengths when equally precise alternatives exist,
+such as source and target. Authors MUST NOT distort domain meaning or add padding to satisfy visual
+symmetry; semantic precision takes precedence over alignment.
 
-### DX-06 — Use meaningful names that indicate lifecycle and ownership.
+#### Commentary (non-normative)
 
-Resource names MUST convey their lifecycle, ownership, or allocation strategy. A name like
-`allocator` is acceptable; a name like `arena` or `pool` is better because it informs the reader
-about cleanup expectations.
+The upstream advice is to try hard to find naturally aligned names. The preference helps readers
+compare related offsets and slices without making equal name lengths a correctness property.
 
-Rationale: Knowing whether a resource needs explicit cleanup is critical for correctness. The name
-should make this obvious.
+### DX-08 — Identify single-caller helpers
 
-```text
-# Do
-arena: Allocator      # reader knows: bulk free, no individual dealloc
-pool: ConnectionPool  # reader knows: return to pool, don't close
+Helpers and callbacks dedicated to one caller SHOULD use that caller's name as a prefix. Shared
+helpers MUST instead be named for their shared responsibility; authors MUST NOT create misleading
+caller prefixes or duplicate shared logic solely to satisfy this naming convention.
 
-# Acceptable but less informative
-allocator: Allocator
-connection: Connection
-```
+#### Commentary (non-normative)
 
-### DX-07 — Align related names by character length when feasible.
+The single-caller scope comes from upstream. The strong-default formulation and explicit shared
+helper behavior are package adaptations to avoid mechanical prefixing of general utilities.
 
-When choosing names for related variables, PREFER names with the same character count so that
-related expressions align visually in the source.
+### DX-09 — Put callbacks last
 
-Rationale: Symmetrical code is easier to scan and verify. Alignment makes differences (and bugs)
-stand out.
+In authored APIs, callback parameters MUST come last. Fixed language/framework signatures MAY retain
+their required order; callers MUST NOT reorder an external contract to match this convention.
 
-```text
-# Do: "source" and "target" are both 6 characters
-source_offset = 0
-target_offset = 0
-copy(source[source_offset..], target[target_offset..])
+#### Commentary (non-normative)
 
-# Do not: "src" (3) and "dest" (4) misalign
-src_offset = 0
-dest_offset = 0
-```
+Upstream aligns parameter order with control flow. The external-signature allowance makes the rule
+usable when implementing a callback interface that the package does not own.
 
-### DX-08 — Prefix helper/callback names with the caller's name.
+### DX-10 — Present important declarations first
 
-When a function calls a helper or callback, the helper's name MUST be prefixed with the calling
-function's name.
+Files SHOULD present entry points and important public declarations before internal helpers, after
+language-required imports or prerequisite declarations. Authors MUST preserve initialization and
+name-resolution semantics; readability ordering MUST NOT introduce forward-reference failures.
 
-Rationale: The prefix makes the call hierarchy visible in the name itself, without requiring the
-reader to trace call sites.
+#### Commentary (non-normative)
 
-```text
-# Do
-read_sector()
-read_sector_callback()
-read_sector_validate()
+Upstream emphasizes first-read, top-down comprehension, while acknowledging that not every ordering
+has one correct answer. The prerequisite allowance ports that advice to other languages.
 
-# Do not
-sector_callback()                # VIOLATION: no caller prefix
-on_read_done()                   # VIOLATION: inconsistent scheme
-```
+### DX-11 — Order data, types, and methods coherently
 
-### DX-09 — Callbacks go last in parameter lists.
+Where the language permits, struct/class declarations SHOULD place fields first, nested types next,
+and methods last. Complex nested types SHOULD move to top level when that improves their independent
+comprehension. Reordering MUST preserve initialization order, layout, visibility, and API contracts.
 
-Callback parameters MUST be the last parameters in a function signature.
+#### Commentary (non-normative)
 
-Rationale: Callbacks are invoked last. Parameter order should mirror control flow for consistency
-and readability.
+The layout and complex-nested-type advice come from upstream. Physical field layout can affect
+serialization or ABI compatibility, so readability is not permission to change that contract.
 
-```text
-# Do
-def read_sector(disk, sector_id, callback):
+### DX-12 — Keep terminology unambiguous
 
-# Do not
-def read_sector(callback, disk, sector_id):  # VIOLATION: callback first
-```
+Within a system, authors MUST NOT reuse established domain terminology for a different concept in
+a way that makes code, documentation, or operational communication ambiguous. New names MUST be
+checked against the surrounding domain vocabulary.
 
-### DX-10 — Order declarations by importance. Put main/entry first.
+#### Commentary (non-normative)
 
-Within a file, the most important declarations (entry points, main functions, public API) MUST
-appear first. Internal helpers and utilities follow.
+Upstream distinguishes pending transfers from the consensus protocol's two-phase terminology.
+Ordinary local vocabulary can recur; the defect is misleading overload of a domain concept.
 
-Rationale: Files are read top-down on first encounter. The reader should encounter the most
-important context first.
+### DX-13 — Prefer nouns for externally discussed concepts
 
-```text
-# File structure:
-# 1. Entry point / main / public API
-# 2. Core logic functions
-# 3. Helper functions
-# 4. Utilities and constants
-```
+Names for concepts discussed in documentation or communication SHOULD be nouns or noun phrases
+that compose naturally into prose and derived identifiers. Operation names MAY remain verbs;
+authors MUST NOT rename an action into a noun that obscures what it does.
 
-### DX-11 — Struct layout: fields, then types, then methods.
+#### Commentary (non-normative)
 
-Struct/class definitions MUST be ordered: data fields first, then nested type definitions, then
-methods.
+Upstream's pipeline versus preparing example concerns a concept name. It does not imply that an
+exported send function is wrong because its name is a verb.
 
-Rationale: Predictable layout lets the reader find what they need by position. Data is the most
-important thing about a struct; it comes first.
+### DX-14 — Name confusable arguments at call sites
 
-```text
-struct Replica:
-    # Fields first
-    term: u64
-    status: Status
-    log: Log
+Authored APIs with swappable same-type arguments or unclear positional meanings MUST use named
+options, keyword arguments, or an equivalent named structure. Fixed external signatures MAY remain
+positional; authors MUST make confusable values clear locally without inventing redundant wrappers.
 
-    # Types second
-    type Status = enum { follower, candidate, leader }
+#### Commentary (non-normative)
 
-    # Methods last
-    def init(config): ...
-    def step(message): ...
-```
+Upstream's options-struct pattern prevents silently reversing two u64 values. Named keyword
+arguments provide the same call-site benefit in languages that support them directly.
 
-### DX-12 — Do not overload names that conflict with domain terminology.
+### DX-15 — Make nullable arguments interpretable
 
-Names MUST NOT be reused across different concepts in the same system. If a term has a specific
-meaning in one context (e.g., protocol), it MUST NOT be reused with a different meaning elsewhere.
+A nullable argument MUST expose at the call site what null means through a named parameter, option,
+or explicit domain name. Fixed external APIs MAY use a clearly named local value. Authors MUST NOT
+assume null means disabled, unlimited, or default without checking the callee's contract.
 
-Rationale: Overloaded terminology causes confusion in documentation, code review, and incident
-response. It forces the reader to determine meaning from context, which is error-prone.
+#### Commentary (non-normative)
 
-```text
-# Do: distinct names for distinct concepts
-pending_transfer    # domain: payment lifecycle
-consensus_prepare   # domain: distributed protocol
+A timeout field set to null is not inherently a no-timeout guarantee; that interpretation belongs to
+the API. The named-local allowance adapts upstream's named options to fixed positional interfaces.
 
-# Do not: overloaded name
-two_phase_commit    # VIOLATION: means different things in payments vs. consensus
-```
+### DX-16 — Order distinct singleton dependencies consistently
 
-### DX-13 — Prefer nouns over adjectives/participles for externally-referenced names.
+For authored constructors whose singleton dependencies have distinct, unconfusable types, authors
+SHOULD pass them positionally from most general to most specific. Required framework injection or
+named-argument conventions MAY take precedence. Confusable configuration belongs under DX-14.
 
-Names that appear in documentation, logs, or external communication MUST be nouns (or noun phrases)
-that can be used directly as section headers or conversation topics.
+#### Commentary (non-normative)
 
-Rationale: Noun names compose cleanly into derived identifiers and work in prose without
-rephrasing. A noun like `pipeline` can be a section header; a participle like `preparing` cannot.
+Allocator, tracer, and operation-specific configuration illustrate upstream's scope ordering. This
+is not an instruction to invent singletons or bypass an established dependency-injection interface.
 
-```text
-# Do
-replica.pipeline         # "The pipeline is full" — works in docs
-config.pipeline_max      # clean derived identifier
+### DX-17 — Write durable commit rationale
 
-# Do not
-replica.preparing        # "The preparing is..." — awkward in docs
-```
+When creating a commit, authors MUST write a descriptive message explaining the change and its
+purpose. A pull-request description MUST NOT be treated as a substitute for repository history.
+This rule MUST NOT be interpreted as authorization to create commits outside the task's workflow.
 
-### DX-14 — Use named option structs when arguments can be confused.
+#### Commentary (non-normative)
 
-When a function takes two or more arguments of the same type, or arguments whose meaning is not
-obvious at the call site, a named options struct MUST be used.
+Upstream highlights that commit messages remain available in git history and blame. The workflow
+qualification prevents an agent from committing merely to claim compliance with a writing rule.
 
-Rationale: Positional arguments of the same type are silently swappable. Named fields make the call
-site self-documenting and prevent transposition bugs.
+### DX-18 — Explain decisions rather than narrate syntax
 
-```text
-# Do: named options
-transfer(TransferOptions {
-    from: account_a,
-    to: account_b,
-    amount: 100,
-})
+Comments MUST explain relevant rationale, assumptions, or surprising behavior that code alone does
+not communicate. Authors MUST NOT add line-by-line restatements merely to satisfy a comment quota.
+Explanations of what an interface promises MAY accompany the why when they help define its contract.
 
-# Do not: positional same-type args
-transfer(account_a, account_b, 100)  # which is from, which is to?
-```
+#### Commentary (non-normative)
 
-### DX-15 — Name nullable parameters so null's meaning is clear at the call site.
+Upstream says code alone is not documentation, not that all descriptions of behavior are forbidden.
+A durability promise can explain why a synchronization call occurs at a particular point.
 
-If a parameter accepts null/none/nil, the parameter name MUST make the meaning of null obvious when
-read at the call site.
+### DX-19 — Explain test goals and methods
 
-Rationale: `foo(null)` is meaningless without context. `foo(timeout_ms: null)` communicates "no
-timeout."
+Tests and complex algorithms MUST include a concise description of their goal and methodology near
+the relevant code. Related tests MAY share a description when its scope is clear. The explanation
+MUST identify significant error/boundary cases rather than force the reader to infer the test plan.
 
-```text
-# Do
-connect(host, timeout_ms: null)    # clear: no timeout
+#### Commentary (non-normative)
 
-# Do not
-connect(host, null)                # VIOLATION: null meaning unclear
-```
+A short shared introduction can explain a family of table-driven boundary tests. Repeating identical
+prose above every case adds noise without improving the reader's mental model.
 
-### DX-16 — Thread singletons positionally: general to specific.
+### DX-20 — Write comments as prose
 
-Constructor parameters that are singletons (allocator, logger, tracer) MUST be passed positionally,
-ordered from most general to most specific. They have unique types and cannot be confused.
+Standalone comments MUST use a space after the delimiter, a capitalized sentence, and a full stop
+or a colon introducing related content. End-of-line comments MAY be phrases without punctuation.
+Machine directives and syntax-mandated comment forms MAY retain their required spelling.
 
-Rationale: Consistent constructor signatures reduce cognitive load. General-to-specific ordering
-mirrors dependency scope.
+#### Commentary (non-normative)
 
-```text
-# Do: general -> specific
-Server.init(allocator, logger, config)
-
-# Do not: random order
-Server.init(config, allocator, logger)  # VIOLATION: inconsistent ordering
-```
-
-### DX-17 — Write descriptive commit messages.
-
-Commit messages MUST be descriptive, informative, and explain the purpose of the change. A pull
-request description is not a substitute for a commit message because PR descriptions are not stored
-in the git repository and are invisible in `git blame`.
-
-Rationale: Commit history is permanent documentation. Every `git blame` reader deserves context.
-
-```text
-# Do
-"Enforce bounded retry queue to prevent tail-latency spikes
-
-Previously, the retry queue grew unboundedly under sustained load,
-causing p99 latency to spike to 500ms. This change adds a fixed
-upper bound of 1024 entries and rejects new retries when full."
-
-# Do not
-"fix bug"
-"update code"
-"wip"
-```
-
-### DX-18 — Explain "why" in code comments.
-
-Comments MUST explain why the code was written this way, not what the code does. The "what" is in
-the code; the "why" is the only thing that enables safe future changes.
-
-Rationale: Without rationale, future maintainers cannot evaluate whether the decision still applies.
-They must either preserve code they don't understand or risk breaking it.
-
-```text
-# Do
-# Why: fsync after every batch because we promised durability to the client.
-# A crash between batches may lose at most one batch, which is acceptable
-# per our SLA, but losing acknowledged writes is not.
-fsync(fd)
-
-# Do not
-# Sync the file descriptor.     # VIOLATION: restates the code
-fsync(fd)
-```
-
-### DX-19 — Explain "how" for tests and complex logic.
-
-Tests and complex algorithms MUST include a description at the top explaining the goal and
-methodology.
-
-Rationale: Tests are documentation of expected behavior. A reader should be able to understand what
-is being tested and why, without reading every assertion. This also helps readers skip irrelevant
-tests quickly.
-
-```text
-# Test: verify that the transfer engine rejects overdrafts.
-# Methodology: create an account with a known balance, attempt transfers
-# of exactly the balance (should succeed), balance + 1 (should fail),
-# and zero (should fail). Verify account balance is unchanged after
-# rejected transfers.
-def test_overdraft_rejection():
-    ...
-```
-
-### DX-20 — Comments are well-formed sentences.
-
-Comments MUST be complete sentences: space after the delimiter, capital letter, full stop (or colon
-if followed by related content). End-of-line comments may be phrases without punctuation.
-
-Rationale: Well-written prose is easier to read and signals that the author has thought carefully.
-Sloppy comments suggest sloppy thinking.
-
-```text
-# Do
-# This avoids double-counting when a transfer is posted twice.
-
-# Do (end-of-line)
-balance -= amount  # idempotent
-
-# Do not
-#this avoids double counting  # VIOLATION: no space, no caps, no period
-```
-
----
+Upstream explicitly allows end-of-line phrases and colons. The machine-directive allowance prevents
+prose cleanup from breaking executable tooling annotations.
 
 ## Cache Invalidation & State Hygiene (CIS)
 
-### CIS-01 — Do not duplicate variables or alias state.
+### CIS-01 — Keep one source of truth
 
-Every piece of state MUST have exactly one source of truth. Variables MUST NOT be duplicated or
-aliased unless there is a compelling performance reason, in which case the alias MUST be documented
-and its synchronization asserted.
+State MUST have one authoritative owner. Authors MUST NOT duplicate mutable state or introduce
+aliases that obscure mutation. Necessary derived caches MAY exist only with a concrete need,
+explicit ownership and invalidation, and consistency checks. Read-only references MAY be used
+without being mistaken for independently owned copies.
 
-Rationale: Duplicated state will eventually desynchronize. The farther apart the copies, the harder
-the bug.
+#### Commentary (non-normative)
 
-```text
-# Do: single source of truth
-total = compute_total(items)
+The cache/reference allowances are package adaptations. They reconcile the no-duplication principle
+with intentional performance state and const-reference guidance, rather than pretending any alias
+is an independent source of truth.
 
-# Do not: duplicated state
-cached_total = total             # VIOLATION: will desync if items change
-```
+### CIS-02 — Avoid unintended large value copies
 
-### CIS-02 — Pass large arguments (>16 bytes) by const reference.
+Where arguments have value-copy semantics, values larger than 16 bytes MUST be passed by const
+pointer/reference when copying is not intended. An intentional copy MAY remain explicit. Authors
+MUST NOT add fake reference wrappers where the language already passes object references, and MUST
+preserve lifetime and ownership guarantees when replacing a copy with a borrow.
 
-Function arguments larger than 16 bytes MUST be passed by const pointer/reference, not by value.
+#### Commentary (non-normative)
 
-Rationale: Passing large structs by value creates implicit copies that waste stack space and can
-mask bugs where the caller modifies state expecting the callee to see the change.
+The intended-copy qualification is present upstream and was lost in the old full guide. Sixteen
+bytes is not an instruction to estimate object sizes in a runtime with opaque object representation.
 
-```text
-# Do
-def process(config: *const Config):
+### CIS-03 — Initialize address-sensitive large values in place
 
-# Do not
-def process(config: Config):     # VIOLATION: copied on call (if >16 bytes)
-```
+Where large value construction otherwise copies or moves storage, authors SHOULD initialize it in
+place using an out pointer or the language's equivalent. When correctness requires address
+stability, the construction path MUST guarantee it. Guaranteed language-level copy elision MAY
+satisfy the no-intermediate-copy goal without an out-pointer API.
 
-### CIS-03 — Prefer in-place initialization via out pointers.
+#### Commentary (non-normative)
 
-Large structs MUST be initialized in-place by passing a target/out pointer, rather than returning a
-value that is then copied/moved.
+This is a package adaptation of upstream's concrete out-pointer technique. An assumed optimization
+is not the same as a language guarantee. Moving a self-referential object can break it even when
+copy cost is negligible.
 
-Rationale: In-place initialization avoids intermediate copies, ensures pointer stability, and
-eliminates undesirable stack growth. It enables immovable types.
+### CIS-04 — Preserve in-place guarantees through containers
 
-```text
-# Do: in-place via out pointer
-def init(target: *LargeStruct):
-    target.field_a = ...
-    target.field_b = ...
+If a field requires in-place initialization or stable identity, its containing object MUST preserve
+that guarantee throughout construction and use. Authors MUST NOT move a container in a way that
+invalidates a field's address-sensitive invariants; the language's ownership or pinning mechanism
+MAY establish the required guarantee.
 
-# Do not: return and copy
-def init() -> LargeStruct:
-    return LargeStruct { ... }   # VIOLATION: intermediate copy
-```
+#### Commentary (non-normative)
 
-### CIS-04 — If any field requires in-place init, the whole struct does.
+Upstream calls in-place initialization viral. The observable obligation is that putting an immovable
+field inside another object does not silently make it movable again.
 
-In-place initialization is viral. If any field of a struct requires in-place initialization, the
-entire containing struct MUST also be initialized in-place.
+### CIS-05 — Keep checks and values close to use
 
-Rationale: Mixing in-place and return-value initialization for different fields of the same struct
-breaks pointer stability guarantees.
+Values MUST be declared, calculated, and checked as close as practical to their use. Authors MUST
+minimize intervening work that can invalidate a check and MUST NOT retain obsolete values beyond
+their useful scope. Temporal validity across suspension or concurrency also follows CIS-07.
 
-```text
-# If SubStruct requires in-place init:
-def Container.init(target: *Container):
-    target.sub.init()            # in-place
-    target.value = 0             # rest of container also in-place
-```
+#### Commentary (non-normative)
 
-### CIS-05 — Declare variables close to use. Shrink scope.
+Place-of-check to place-of-use distance can hide assumptions even without concurrency. This rule
+complements SAF-13: minimal scope and minimal check/use distance address related failure modes.
 
-Variables MUST be computed or checked as close as possible to where they are used. Do not introduce
-variables before they are needed. Do not leave them in scope after they are consumed.
+### CIS-06 — Use the simplest sufficient return contract
 
-Rationale: Minimizing the gap between check and use (POCPOU) reduces the probability of
-time-of-check-to-time-of-use errors. Most bugs come from semantic gaps in time or space.
+Authors SHOULD choose the simplest return type that preserves all outcomes the caller needs.
+The progression void, boolean, integer, optional, result is a complexity preference, not permission
+to discard information. Expected operating failures MUST remain explicit; authors MUST NOT replace
+an error result with an assertion merely to simplify a signature.
 
-```text
-# Do: compute at point of use
-offset = compute_offset(index)
-buffer[offset] = value
+#### Commentary (non-normative)
 
-# Do not: compute far from use
-offset = compute_offset(index)
-# ... 20 lines of unrelated code ...    # VIOLATION: gap
-buffer[offset] = value
-```
+Upstream discusses call-site dimensionality. A validation function for untrusted input legitimately
+needs a rejection result; erasing that result does not make the operation less fallible.
 
-### CIS-06 — Prefer simpler return types to reduce call-site dimensionality.
+### CIS-07 — Preserve preconditions until dependent work completes
 
-Function return types MUST be as simple as possible. Prefer `void` over `bool`, `bool` over integer,
-integer over optional, optional over result/error.
+Functions SHOULD run to completion without suspension while relying on mutable preconditions.
+If awaiting or yielding is required, authors MUST establish which facts remain stable through
+ownership or synchronization and revalidate any others before dependent use. External operations
+MUST still handle failure; a prior check does not guarantee that a subsequent I/O operation
+succeeds.
 
-Rationale: Each additional dimension in the return type creates branches at every call site. This
-dimensionality is viral, propagating through the call chain.
+#### Commentary (non-normative)
 
-```text
-# Preference order (simplest to most complex):
-# void > bool > u64 > ?u64 > Result<u64, Error>
+Revalidation is an explicit async-runtime adaptation of upstream's run-to-completion instruction.
+A connection can fail even between adjacent check and send calls. Immutable local facts, meanwhile,
+do not automatically become false simply because an unrelated await occurs.
 
-# Do: return void, assert internally
-def validate(data):
-    assert(data.valid())         # crash if invalid
+### CIS-08 — Prevent stale-byte exposure and out-of-bounds reads
 
-# Avoid if possible: return result, force caller to branch
-def validate(data) -> Result:
-    if not data.valid():
-        return Error("invalid")  # caller must handle
-```
+Buffer reads, transmission, and persistence MUST stay within valid initialized bounds. Unused or
+padding bytes that can be read, transmitted, or persisted MUST be explicitly zeroed, or excluded by
+using an exact initialized slice. Authors MUST validate declared lengths against actual storage
+and MUST NOT expose stale bytes or rely on uninitialized padding for deterministic behavior.
 
-### CIS-07 — Functions must run to completion without suspending.
+#### Commentary (non-normative)
 
-Functions that contain precondition assertions MUST run to completion without yielding, suspending,
-or awaiting between the assertion and the code that depends on it.
+Upstream's buffer-bleed warning concerns disclosure and determinism. Heartbleed was an out-of-bounds
+read, not a buffer underflow. Exact-slice handling is a package clarification: unused capacity that
+is never accessed does not need to be transmitted merely to prove it was zeroed.
 
-Rationale: If a function suspends after asserting a precondition, the precondition may no longer
-hold when execution resumes. The assertion becomes misleading documentation.
+### CIS-09 — Group acquisition with cleanup registration
 
-```text
-# Do: assert and use without suspension
-assert(connection.is_alive())
-connection.send(data)
+Resource acquisition and cleanup registration MUST be visually grouped, with a blank line before
+acquisition and after its defer, context-manager, or equivalent cleanup setup. Authors MUST register
+cleanup before unrelated fallible work and preserve cleanup on both success and failure paths.
 
-# Do not: suspend between assert and use
-assert(connection.is_alive())
-await some_other_work()          # VIOLATION: connection may have died
-connection.send(data)
-```
+#### Commentary (non-normative)
 
-### CIS-08 — Guard against buffer underflow (buffer bleeds).
-
-All buffers MUST be fully utilized or the unused portion MUST be explicitly zeroed. Buffers MUST NOT
-be sent or persisted with uninitialized or stale padding bytes.
-
-Rationale: Buffer underflow (the opposite of overflow) can leak sensitive information and violate
-deterministic guarantees. This is the class of bug that caused Heartbleed.
-
-```text
-# Do: zero unused space
-buffer = allocate(BUFFER_SIZE)
-write(data, buffer)
-zero(buffer[len(data)..BUFFER_SIZE])   # zero the rest
-
-# Do not: send buffer with stale padding
-buffer = allocate(BUFFER_SIZE)
-write(data, buffer)
-send(buffer)                           # VIOLATION: padding may contain secrets
-```
-
-### CIS-09 — Group allocation with deallocation using blank lines.
-
-Resource allocation and its corresponding deallocation (defer/finally/cleanup) MUST be visually
-grouped using blank lines: a blank line before the allocation and after the corresponding
-defer/cleanup.
-
-Rationale: Visual grouping makes resource leaks easy to spot during code review. If allocation and
-deallocation are not adjacent, the eye cannot verify correctness at a glance.
-
-```text
-# Do: visual grouping
-<blank line>
-fd = open(path)
-defer close(fd)
-<blank line>
-
-# Do not: interleaved with unrelated code
-fd = open(path)
-config = load_config()           # VIOLATION: unrelated code between alloc and defer
-defer close(fd)
-```
-
----
+Upstream uses adjacent allocation and defer statements. The language-equivalent wording supports
+structured cleanup without pretending the final cleanup action occurs next to acquisition in time.
 
 ## Off-by-One & Arithmetic (OBO)
 
-### OBO-01 — Treat index, count, and size as distinct types.
+### OBO-01 — Distinguish index, count, and size
 
-Indexes, counts, and sizes MUST be treated as conceptually distinct types even when they share the
-same underlying integer type. Conversions between them MUST be explicit:
-- index → count: add 1 (indexes are 0-based, counts are 1-based).
-- count → size: multiply by unit size.
+Indexes, counts, and sizes MUST be treated as conceptually distinct quantities with explicit
+conversions and units. For a nonempty zero-based sequence, count equals last_index + 1; size equals
+count multiplied by element size. Empty sequences, range endpoints, and arithmetic overflow MUST
+be handled explicitly; authors MUST NOT assume every index denotes the final element.
 
-Rationale: The casual interchange of index, count, and size is the primary source of off-by-one
-errors. Explicit conversion makes the intent clear and the math verifiable.
+#### Commentary (non-normative)
 
-```text
-# Do: explicit conversion
-last_index = 9
-count = last_index + 1           # 10 items (index -> count)
-size_bytes = count * ITEM_SIZE   # count -> size
+A count can be zero. The old shorthand that counts are one-based obscured that boundary.
+An arbitrary index plus one describes a prefix length, not necessarily the total number of elements.
 
-# Do not: implicit interchange
-buffer = allocate(last_index)    # VIOLATION: is this count or index?
-```
+### OBO-02 — Make integer division semantics visible
 
-### OBO-02 — Use explicit division semantics.
+Integer division MUST make exactness or rounding direction explicit through an appropriate named
+operation or a language operator with clear documented semantics. Authors MUST handle zero divisors,
+remainder requirements, signed rounding, and overflow where relevant. They MUST NOT invent wrappers
+that only rename an already unambiguous operation.
 
-All integer division MUST use an explicitly-named operation that communicates the rounding behavior:
-exact division (asserts no remainder), floor division, or ceiling division.
+#### Commentary (non-normative)
 
-Rationale: The default `/` operator's rounding behavior varies by language and surprises
-programmers. Explicit division shows the reader that rounding has been considered.
-
-```text
-# Do: explicit semantics
-pages = div_ceil(total_bytes, PAGE_SIZE)     # round up
-aligned = div_floor(offset, ALIGNMENT)       # round down
-slots = div_exact(buffer_size, SLOT_SIZE)    # assert no remainder
-
-# Do not: implicit division
-pages = total_bytes / PAGE_SIZE              # VIOLATION: truncation toward zero? floor?
-```
-
----
+Upstream names exact, floor, and ceiling division operations. Accepting an unambiguous language
+operator is a package adaptation. Ceiling division based on adding divisor minus one can overflow
+even when the quotient would fit, and negative inputs can distinguish floor from truncation.
 
 ## Formatting & Code Style (FMT)
 
-### FMT-01 — Run the language formatter.
+### FMT-01 — Use the established formatter
 
-All code MUST be formatted by the project's standard formatter. No manual formatting overrides are
-permitted in code that the formatter handles.
+Authored code MUST use the project's standard formatter where one exists. Authors MUST NOT manually
+fight formatter-controlled layout. If no formatter is configured, authors MUST preserve established
+formatting and report that limitation rather than add a tool solely for this rule. Conflicts with
+other applicable requirements MUST be surfaced, not silently hidden by formatter output.
 
-Rationale: Automated formatting eliminates style debates in code review and ensures consistency
-across the codebase.
+#### Commentary (non-normative)
 
-```text
-# Examples per language:
-# Zig:    zig fmt
-# Go:     gofmt
-# Rust:   rustfmt
-# Python: black / ruff format
-# TS/JS:  prettier / biome
-```
+Upstream uses zig fmt. The portable fallback avoids introducing a formatting tool as unrelated work,
+while retaining observable formatting discipline. Successful formatting does not prove correctness.
 
-### FMT-02 — Use 4-space indentation (or the project's declared standard).
+### FMT-02 — Use consistent indentation
 
-Indentation MUST be 4 spaces unless the project explicitly declares a different standard. Tabs
-MUST NOT be used unless the language mandates them (e.g., Go).
+Indentation MUST use four spaces unless the project explicitly establishes a different standard
+or the language/standard formatter requires another form. Tabs MUST NOT be introduced outside such
+a requirement. Authors MUST NOT reindent unrelated code to enforce their preferred convention.
 
-Rationale: 4 spaces is more visually distinct than 2 spaces at a distance, making nesting depth
-immediately apparent.
+#### Commentary (non-normative)
 
-```text
-# Do: 4 spaces
-if condition:
-    if nested:
-        do_work()
+Four spaces comes from upstream; project and formatter exceptions are package adaptations. This
+permits language-standard tabs without claiming every such language syntactically mandates them.
 
-# Do not: 2 spaces (unless project standard)
-if condition:
-  if nested:
-    do_work()
-```
+### FMT-03 — Limit lines to 100 columns
 
-### FMT-03 — Hard limit all lines to 100 columns.
+Authored code lines MUST NOT exceed 100 display columns after formatting. Authors MUST wrap at
+meaningful boundaries without changing literals or behavior. An unavoidable generated/external
+format or formatter conflict MUST be reported explicitly rather than silently treated as compliant.
 
-No line SHALL exceed 100 columns. No exceptions. Nothing should be hidden by a horizontal scrollbar.
+#### Commentary (non-normative)
 
-Rationale: 100 columns allows two files side-by-side on a standard monitor. The limit is physical:
-it ensures code is always fully visible during review and diffing.
+The upstream limit supports side-by-side reading. Reporting an unavoidable conflict does not make
+the conflicting line compliant or authorize changing an externally required data representation.
 
-```text
-# If a line exceeds 100 columns, break it:
-# - Add a trailing comma to trigger formatter wrapping.
-# - Break at logical boundaries (after operators, before arguments).
-```
+### FMT-04 — Delimit conditional bodies safely
 
-### FMT-04 — Always use braces on if statements (unless single-line).
+In languages with optional braces, an if statement MUST use braces unless its entire condition and
+body fit on one line. Languages with other block delimiters MUST use their required structure.
+Authors MUST NOT rely on indentation alone where the language does not make it semantically binding.
 
-If statements MUST have braces unless the entire statement (condition + body) fits on a single line.
+#### Commentary (non-normative)
 
-Rationale: Braceless multi-line if statements are the root cause of Apple's "goto fail" vulnerability
-and similar bugs. Braces provide defense in depth.
-
-```text
-# Do: single-line, no braces needed
-if (done) return
-
-# Do: multi-line, braces required
-if (done) {
-    cleanup()
-    return
-}
-
-# Do not: multi-line without braces
-if (done)
-    cleanup()
-    return              # VIOLATION: not guarded by the if
-```
-
----
+Upstream's braces rule defends against a visually indented statement escaping its intended guard.
+The language scope avoids requesting literal braces in Python while preserving the safety concern.
 
 ## Dependencies & Tooling (DEP)
 
-### DEP-01 — Minimize dependencies.
+### DEP-01 — Admit dependencies for concrete needs
 
-The number of external dependencies MUST be minimized. Every dependency MUST be justified by a
-clear, documented need that cannot be reasonably met by the standard library or existing code.
+External dependencies MUST be minimized. Before adding one, authors MUST document the current need,
+why standard-library or existing code is insufficient, and relevant maintenance, transitive, and
+security costs. Dependency avoidance MUST NOT justify bespoke security-sensitive implementations
+or bypass correctness requirements; existing vetted mechanisms SHOULD be reused first.
 
-Rationale: Dependencies introduce supply chain risk, safety risk, performance risk, and
-installation complexity. For infrastructure code, these costs are amplified throughout the stack.
+#### Commentary (non-normative)
 
-```text
-# Before adding a dependency, answer:
-# 1. Can the standard library do this?
-# 2. Can we write this in <100 lines?
-# 3. Is the dependency actively maintained?
-# 4. What is the transitive dependency count?
-# 5. What is the security track record?
-```
+This is a deliberate relaxation of upstream's zero-dependencies-except-Zig policy. A short bespoke
+implementation is not inherently safer than a maintained library. Line-count thresholds do not
+establish either correctness or an acceptable supply-chain risk.
 
-### DEP-02 — Prefer existing tools over adding new ones.
+### DEP-02 — Prefer the existing toolbox
 
-New tools MUST NOT be introduced when an existing tool in the project's toolchain can accomplish
-the task. The cost of a new tool includes learning, maintenance, CI configuration, and
-cross-platform support.
+Authors SHOULD use existing project tools before introducing another. A new tool MUST address a
+current unmet need with benefits justified against installation, learning, maintenance, and
+portability costs. Authors MUST NOT add a framework or tool for a task existing mechanisms already
+satisfy without a concrete competing requirement.
 
-Rationale: A small, standardized toolbox is simpler to operate than an array of specialized
-instruments each with a dedicated manual.
+#### Commentary (non-normative)
 
-```text
-# Before adding a new tool, answer:
-# 1. Can an existing tool do this (perhaps with a flag or plugin)?
-# 2. Is the marginal benefit worth the maintenance cost?
-# 3. Will every team member need to learn this tool?
-```
+Upstream emphasizes the hidden cost of tooling variety. The comparison includes the whole team's
+workflow, not just the convenience of the person or agent authoring the change.
 
-### DEP-03 — Prefer typed, portable tooling for scripts.
+### DEP-03 — Prefer typed, portable automation
 
-Scripts and automation MUST prefer typed, portable languages over shell scripts. Shell scripts are
-acceptable only for trivial glue (< 20 lines) with no logic.
+Automation SHOULD use a typed, portable language already supported by the project rather than
+shell-specific logic. Shell glue MAY remain when it simply composes existing commands and its
+quoting, error propagation, and platform assumptions are explicit and checked. Authors MUST NOT
+introduce a new language toolchain merely to replace adequate glue or enforce an arbitrary line cap.
 
-Rationale: Shell scripts are not portable (Bash/Zsh/POSIX differences), not type-safe, and fail
-silently in ways that are difficult to debug. Typed scripts are cross-platform and catch errors at
-compile time.
+#### Commentary (non-normative)
 
-```text
-# Do: typed script
-scripts/deploy.ts     # or .go, .rs, .py with type hints
-scripts/migrate.py
-
-# Do not: complex shell script
-scripts/deploy.sh     # VIOLATION if >20 lines or contains logic
-```
-
----
-
-## Appendix: Rule Index
-
-| ID | Rule (short form) |
-|----|-------------------|
-| SAF-01 | Simple explicit control flow; no recursion |
-| SAF-02 | Bound everything |
-| SAF-03 | Explicitly-sized types |
-| SAF-04 | Assert pre/post/invariants |
-| SAF-05 | Assertion density ≥ 2/function |
-| SAF-06 | Pair assertions across paths |
-| SAF-07 | Split compound assertions |
-| SAF-08 | Single-line implication asserts |
-| SAF-09 | Assert compile-time constants |
-| SAF-10 | Assert positive and negative space |
-| SAF-11 | Test valid, invalid, and boundary |
-| SAF-12 | Static allocation only |
-| SAF-13 | Smallest possible variable scope |
-| SAF-14 | 70-line function limit |
-| SAF-15 | Centralize control flow in parent |
-| SAF-16 | Centralize state mutation; pure leaves |
-| SAF-17 | All warnings as errors |
-| SAF-18 | Batch external events |
-| SAF-19 | Split compound conditions |
-| SAF-20 | Positive invariants; no negations |
-| SAF-21 | Handle all errors explicitly |
-| SAF-22 | Always state the why |
-| SAF-23 | Explicit options; no defaults |
-| PERF-01 | Design for performance from start |
-| PERF-02 | Back-of-envelope resource sketches |
-| PERF-03 | Optimize slowest resource first |
-| PERF-04 | Separate control and data planes |
-| PERF-05 | Amortize via batching |
-| PERF-06 | Predictable CPU work |
-| PERF-07 | Explicit; no compiler reliance |
-| PERF-08 | Primitive args in hot loops |
-| DX-01 | Precise nouns and verbs |
-| DX-02 | snake_case for files/functions/variables |
-| DX-03 | No abbreviations |
-| DX-04 | Consistent acronym capitalization |
-| DX-05 | Units/qualifiers appended last |
-| DX-06 | Meaningful lifecycle names |
-| DX-07 | Align related names by length |
-| DX-08 | Prefix helpers with caller name |
-| DX-09 | Callbacks last in params |
-| DX-10 | Important declarations first |
-| DX-11 | Struct: fields → types → methods |
-| DX-12 | No overloaded domain terms |
-| DX-13 | Noun names for external reference |
-| DX-14 | Named options for confusable args |
-| DX-15 | Name nullable params clearly |
-| DX-16 | Singletons: general → specific |
-| DX-17 | Descriptive commit messages |
-| DX-18 | Explain "why" in comments |
-| DX-19 | Explain "how" in tests |
-| DX-20 | Comments are sentences |
-| CIS-01 | No state duplication or aliasing |
-| CIS-02 | Large args by const reference |
-| CIS-03 | In-place init via out pointers |
-| CIS-04 | In-place init is viral |
-| CIS-05 | Declare close to use |
-| CIS-06 | Simpler return types |
-| CIS-07 | No suspension with active assertions |
-| CIS-08 | Guard against buffer bleeds |
-| CIS-09 | Group alloc/dealloc visually |
-| OBO-01 | Index ≠ count ≠ size |
-| OBO-02 | Explicit division semantics |
-| FMT-01 | Run the formatter |
-| FMT-02 | 4-space indent |
-| FMT-03 | 100-column hard limit |
-| FMT-04 | Braces on if (unless single-line) |
-| DEP-01 | Minimize dependencies |
-| DEP-02 | Prefer existing tools |
-| DEP-03 | Typed portable scripts |
+This ports upstream's Zig-tooling preference to an established project toolbox. The shell allowance
+is task-based, not the old invented 20-line cutoff. A short shell script can still mishandle errors;
+a typed script can still rely on unavailable executables.

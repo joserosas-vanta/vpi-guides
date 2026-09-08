@@ -620,6 +620,36 @@ The minimal core rulebook sequence starts with:
 
 ---
 
+## TigerStyle normative contract
+
+TigerStyle is an agent-oriented port of upstream, with scoped obligations and explicit package
+adaptations for other languages/runtimes. It is maintained by the pi-guides maintainers.
+
+- `files/tigerstyle-strict-full.md` is the authoring source.
+- `files/tigerstyle-strict-compact.md` contains the **same normative text**, not a paraphrase.
+- Both contain the same application contract, 69 rule IDs, titles, scopes, and exceptions.
+- Full adds only sections labeled `Commentary (non-normative)`; these add no obligations.
+- MUST requirements are mandatory within scope. SHOULD rules are strong defaults whose material
+  departures need concrete reasons. Report unmet requirements and verification gaps explicitly.
+- Expected invalid inputs and operating failures use error handling, not assertion crashes.
+
+**Unreleased contract change:** this is a semantic policy revision, including restored upstream
+recommendations and deliberate portability adaptations, not just editorial compression. Existing
+paths, variant IDs, profile defaults, and `version: 1` configuration remain unchanged. Package pins
+identify the policy version; consumers should review affected rule references and local exceptions
+before upgrading. Existing release tags must not be moved to apply this revision silently.
+
+See [the mapping notes](docs/tigerstyle-mapping.md) for source mappings, adaptation rationale,
+provenance limits, cutover details, and manual agent-evaluation cases. The exact upstream commit for
+this review's supplied source text has not been established; this is not a latest-upstream claim.
+
+The parity check is `node --test tests/tigerstyle-guides.test.js`. It checks all shared text,
+including the preamble, and rejects malformed/missing rules and full-only normative keywords.
+It does not prove model adherence. Compact retains more qualifications and is longer;
+full/compact equality takes precedence over the old compact word count.
+
+---
+
 ## Profile registry contract
 
 `registry/profiles.json` is the machine-canonical profile registry.
@@ -705,7 +735,9 @@ Current validation checks include:
 - local dogfood `.pi/settings.json` is valid
 - key runtime files exist
 
-The repository also includes extension command dogfood checks and validator regression checks:
+The repository also includes extension command dogfood checks, validator regression checks, and
+TigerStyle normative-text parity/content checks. The standalone validator checks registry structure
+and paths; the test suite additionally checks TigerStyle content:
 
 ```bash
 node --test
